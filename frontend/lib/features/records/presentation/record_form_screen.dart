@@ -11,9 +11,16 @@ import '../data/records_repository.dart';
 import 'record_providers.dart';
 
 class RecordFormScreen extends ConsumerStatefulWidget {
-  const RecordFormScreen({super.key, this.recordId});
+  const RecordFormScreen({
+    super.key,
+    this.recordId,
+    this.initialDate,
+    this.cloneFromRecordId,
+  });
 
   final int? recordId;
+  final DateTime? initialDate;
+  final int? cloneFromRecordId;
 
   @override
   ConsumerState<RecordFormScreen> createState() => _RecordFormScreenState();
@@ -24,54 +31,77 @@ class _RecordFormScreenState extends ConsumerState<RecordFormScreen> {
   final _dishController = TextEditingController();
   final _recipeController = TextEditingController();
   final _memoController = TextEditingController();
-  final _linkController = TextEditingController();
   final _ingredients = <_IngredientRow>[const _IngredientRow()];
+  final _existingImages = <_ExistingImageDraft>[];
   final _pickedImages = <XFile>[];
+  final _links = <_LinkDraft>[];
+  final _deletedAttachmentIds = <int>[];
   final _picker = ImagePicker();
-  DateTime _date = DateTime.now();
+  late DateTime _date;
   int? _rating;
   bool _loaded = false;
   bool _saving = false;
 
   bool get _isEdit => widget.recordId != null;
+  bool get _isClone => widget.cloneFromRecordId != null;
+  int get _totalImageCount => _existingImages.length + _pickedImages.length;
+
+  @override
+  void initState() {
+    super.initState();
+    _date = _safeInitialDate(widget.initialDate);
+  }
 
   @override
   void dispose() {
     _dishController.dispose();
     _recipeController.dispose();
     _memoController.dispose();
-    _linkController.dispose();
     super.dispose();
   }
 
   @override
   Widget build(BuildContext context) {
-    final recordValue = _isEdit ? ref.watch(recordProvider(widget.recordId!)) : null;
+    final sourceRecordId = _isEdit ? widget.recordId : widget.cloneFromRecordId;
+    final recordValue = sourceRecordId == null ? null : ref.watch(recordProvider(sourceRecordId));
     if (recordValue != null) {
       recordValue.whenData(_loadRecord);
     }
 
-    return Scaffold(
-      appBar: AppBar(
-        leading: IconButton(onPressed: _confirmLeave, icon: const Icon(Icons.close)),
-        title: Text(_isEdit ? '기록 수정' : '새 요리 기록 작성', style: const TextStyle(fontWeight: FontWeight.w900)),
-        actions: [
-          Padding(
-            padding: const EdgeInsets.only(right: 12),
-            child: FilledButton(
-              onPressed: _saving ? null : _save,
-              child: Text(_saving ? '저장 중' : '저장'),
+    return PopScope(
+      canPop: false,
+      onPopInvokedWithResult: (didPop, result) {
+        if (didPop) return;
+        _confirmLeave();
+      },
+      child: Scaffold(
+        appBar: AppBar(
+          leading: IconButton(onPressed: _confirmLeave, icon: const Icon(Icons.close)),
+          title: Text(_screenTitle, style: const TextStyle(fontWeight: FontWeight.w900)),
+          actions: [
+            Padding(
+              padding: const EdgeInsets.only(right: 12),
+              child: FilledButton(
+                onPressed: _saving ? null : _save,
+                child: Text(_saving ? '저장 중' : '저장'),
+              ),
             ),
-          ),
-        ],
+          ],
+        ),
+        body: recordValue?.maybeWhen(
+              loading: () => const Center(child: CircularProgressIndicator()),
+              error: (error, stackTrace) => Center(child: Text('기록을 불러오지 못했어요\n$error')),
+              orElse: _form,
+            ) ??
+            _form(),
       ),
-      body: recordValue?.maybeWhen(
-            loading: () => const Center(child: CircularProgressIndicator()),
-            error: (error, stackTrace) => Center(child: Text('기록을 불러오지 못했어요\n$error')),
-            orElse: _form,
-          ) ??
-          _form(),
     );
+  }
+
+  String get _screenTitle {
+    if (_isEdit) return '기록 수정';
+    if (_isClone) return '복제 기록 작성';
+    return '새 요리 기록 작성';
   }
 
   Widget _form() {
@@ -106,13 +136,15 @@ class _RecordFormScreenState extends ConsumerState<RecordFormScreen> {
           _FormSection(
             title: '시각적 기록',
             action: TextButton.icon(
-              onPressed: _pickedImages.length >= 5 ? null : _pickImages,
+              onPressed: _totalImageCount >= 5 ? null : _pickImages,
               icon: const Icon(Icons.add_a_photo),
-              label: const Text('업로드'),
+              label: Text(_totalImageCount >= 5 ? '최대 5장' : '업로드'),
             ),
-            child: _PickedImageGrid(
-              images: _pickedImages,
-              onRemove: (index) => setState(() => _pickedImages.removeAt(index)),
+            child: _ImageDraftGrid(
+              existingImages: _existingImages,
+              pickedImages: _pickedImages,
+              onRemoveExisting: _removeExistingImage,
+              onRemovePicked: (index) => setState(() => _pickedImages.removeAt(index)),
             ),
           ),
           const SizedBox(height: 26),
@@ -157,10 +189,14 @@ class _RecordFormScreenState extends ConsumerState<RecordFormScreen> {
           const SizedBox(height: 26),
           _FormSection(
             title: '외부 참고 자료',
-            child: TextFormField(
-              controller: _linkController,
-              decoration: const InputDecoration(prefixIcon: Icon(Icons.link), hintText: 'YouTube 또는 URL'),
-              keyboardType: TextInputType.url,
+            action: TextButton.icon(
+              onPressed: _links.length >= 10 ? null : _showLinkDialog,
+              icon: const Icon(Icons.add_link),
+              label: const Text('링크 추가'),
+            ),
+            child: _LinkDraftList(
+              links: _links,
+              onRemove: _removeLink,
             ),
           ),
           const SizedBox(height: 28),
@@ -180,7 +216,7 @@ class _RecordFormScreenState extends ConsumerState<RecordFormScreen> {
     _dishController.text = record.dishName;
     _recipeController.text = record.recipe ?? '';
     _memoController.text = record.memo ?? '';
-    _date = record.cookedDate;
+    _date = _isClone ? _safeInitialDate(widget.initialDate) : record.cookedDate;
     _rating = record.rating;
     _ingredients
       ..clear()
@@ -188,6 +224,34 @@ class _RecordFormScreenState extends ConsumerState<RecordFormScreen> {
         record.ingredients.isEmpty
             ? [const _IngredientRow()]
             : record.ingredients.map((item) => _IngredientRow(name: item.name, quantity: item.quantity ?? '')),
+      );
+    _existingImages
+      ..clear()
+      ..addAll(
+        record.attachments.where((item) => item.type == AttachmentType.image).map(
+              (item) => _ExistingImageDraft(
+                id: _isEdit ? item.id : null,
+                title: item.title,
+                thumbnailUrl: item.thumbnailUrl,
+                objectKey: item.objectKey,
+              ),
+            ),
+      );
+    _links
+      ..clear()
+      ..addAll(
+        record.attachments
+            .where((item) => item.type == AttachmentType.url || item.type == AttachmentType.youtube)
+            .map(
+              (item) => _LinkDraft(
+                id: _isEdit ? item.id : null,
+                url: item.url ?? '',
+                title: item.title ?? '',
+                description: item.description ?? '',
+                type: item.type,
+                thumbnailUrl: item.thumbnailUrl,
+              ),
+            ),
       );
   }
 
@@ -203,6 +267,14 @@ class _RecordFormScreenState extends ConsumerState<RecordFormScreen> {
     }
   }
 
+  DateTime _safeInitialDate(DateTime? date) {
+    final now = DateTime.now();
+    if (date == null || date.isAfter(now)) {
+      return now;
+    }
+    return date;
+  }
+
   Future<void> _save() async {
     if (!_formKey.currentState!.validate()) return;
     setState(() => _saving = true);
@@ -216,13 +288,25 @@ class _RecordFormScreenState extends ConsumerState<RecordFormScreen> {
           .where((row) => row.name.trim().isNotEmpty)
           .map((row) => RecordIngredient(name: row.name.trim(), quantity: row.quantity.trim().isEmpty ? null : row.quantity.trim()))
           .toList(),
-      attachments: _linkController.text.trim().isEmpty
+      attachments: _isEdit
           ? const []
           : [
-              RecordAttachment(
-                type: AttachmentType.url,
-                url: _linkController.text.trim(),
-                title: '참고 링크',
+              ..._existingImages.where((image) => image.objectKey != null).map(
+                    (image) => RecordAttachment(
+                      type: AttachmentType.image,
+                      title: image.title,
+                      thumbnailUrl: image.thumbnailUrl,
+                      objectKey: image.objectKey,
+                    ),
+                  ),
+              ..._links.map(
+                (link) => RecordAttachment(
+                  type: link.type,
+                  url: link.url,
+                  title: link.title.isEmpty ? null : link.title,
+                  description: link.description.isEmpty ? null : link.description,
+                  thumbnailUrl: link.thumbnailUrl,
+                ),
               ),
             ],
     );
@@ -230,27 +314,230 @@ class _RecordFormScreenState extends ConsumerState<RecordFormScreen> {
     try {
       final repository = ref.read(recordsRepositoryProvider);
       final record = _isEdit ? await repository.update(widget.recordId!, draft) : await repository.create(draft);
+      for (final attachmentId in _deletedAttachmentIds) {
+        await repository.deleteAttachment(recordId: record.id, attachmentId: attachmentId);
+      }
+      if (_isEdit) {
+        for (final link in _links.where((item) => item.id == null)) {
+          await repository.addLink(
+            recordId: record.id,
+            url: link.url,
+            title: link.title.isEmpty ? null : link.title,
+            description: link.description.isEmpty ? null : link.description,
+          );
+        }
+      }
       for (final image in _pickedImages) {
-        await repository.uploadImage(recordId: record.id, path: image.path, fileName: image.name);
+        await repository.uploadImage(
+          recordId: record.id,
+          bytes: await image.readAsBytes(),
+          fileName: image.name,
+        );
       }
       ref.invalidate(todayRecordsProvider);
       ref.invalidate(recentRecordsProvider);
+      ref.invalidate(recordProvider(record.id));
       if (!mounted) return;
       context.go('/records/${record.id}');
     } catch (error) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('저장하지 못했어요: $error')));
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(_saveErrorText(error))));
     } finally {
       if (mounted) setState(() => _saving = false);
     }
   }
 
   Future<void> _pickImages() async {
-    final images = await _picker.pickMultiImage(limit: 5 - _pickedImages.length);
+    final images = await _picker.pickMultiImage(limit: 5 - _totalImageCount);
     if (images.isEmpty) return;
     setState(() {
-      _pickedImages.addAll(images.take(5 - _pickedImages.length));
+      _pickedImages.addAll(images.take(5 - _totalImageCount));
     });
+  }
+
+  Future<void> _showLinkDialog() async {
+    final formKey = GlobalKey<FormState>();
+    final urlController = TextEditingController();
+    final titleController = TextEditingController();
+    final descriptionController = TextEditingController();
+    AttachmentPreview? preview;
+    bool previewLoading = false;
+    String? previewError;
+
+    Future<void> loadPreview(StateSetter setDialogState) async {
+      final url = urlController.text.trim();
+      final uri = Uri.tryParse(url);
+      if (url.isEmpty || uri == null || !uri.hasScheme || uri.host.isEmpty) {
+        setDialogState(() => previewError = '올바른 URL을 입력해주세요');
+        return;
+      }
+
+      setDialogState(() {
+        previewLoading = true;
+        previewError = null;
+      });
+
+      try {
+        final result = await ref.read(recordsRepositoryProvider).previewLink(url);
+        if (!mounted) return;
+        setDialogState(() {
+          preview = result;
+          previewLoading = false;
+          if (titleController.text.trim().isEmpty && result.title != null) {
+            titleController.text = result.title!;
+          }
+        });
+      } catch (_) {
+        if (!mounted) return;
+        setDialogState(() {
+          preview = null;
+          previewLoading = false;
+          previewError = '미리보기를 가져오지 못했어요. URL은 그대로 저장할 수 있어요.';
+        });
+      }
+    }
+
+    final draft = await showDialog<_LinkDraft>(
+      context: context,
+      builder: (context) => StatefulBuilder(
+        builder: (context, setDialogState) => AlertDialog(
+          title: const Text('참고 링크 추가'),
+          content: Form(
+            key: formKey,
+            child: SizedBox(
+              width: 420,
+              child: SingleChildScrollView(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    TextFormField(
+                      controller: urlController,
+                      decoration: InputDecoration(
+                        labelText: 'URL',
+                        hintText: 'https://...',
+                        suffixIcon: IconButton(
+                          tooltip: '미리보기',
+                          onPressed: previewLoading ? null : () => loadPreview(setDialogState),
+                          icon: previewLoading
+                              ? const SizedBox(
+                                  width: 18,
+                                  height: 18,
+                                  child: CircularProgressIndicator(strokeWidth: 2),
+                                )
+                              : const Icon(Icons.travel_explore),
+                        ),
+                      ),
+                      keyboardType: TextInputType.url,
+                      onChanged: (_) {
+                        setDialogState(() {
+                          preview = null;
+                          previewError = null;
+                        });
+                      },
+                      validator: (value) {
+                        final url = value?.trim() ?? '';
+                        final uri = Uri.tryParse(url);
+                        if (url.isEmpty || uri == null || !uri.hasScheme || uri.host.isEmpty) {
+                          return '올바른 URL을 입력해주세요';
+                        }
+                        if (_links.any((item) => item.url == url)) {
+                          return '이미 추가된 링크입니다';
+                        }
+                        return null;
+                      },
+                    ),
+                    if (preview != null || previewError != null) ...[
+                      const SizedBox(height: 12),
+                      _LinkPreviewBox(preview: preview, error: previewError),
+                    ],
+                    const SizedBox(height: 12),
+                    TextFormField(
+                      controller: titleController,
+                      decoration: const InputDecoration(labelText: '제목', hintText: '예: 참고한 레시피 영상'),
+                    ),
+                    const SizedBox(height: 12),
+                    TextFormField(
+                      controller: descriptionController,
+                      decoration: const InputDecoration(labelText: '메모', hintText: '참고한 부분을 적어두세요'),
+                      minLines: 2,
+                      maxLines: 3,
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ),
+          actions: [
+            TextButton(onPressed: () => Navigator.of(context).pop(), child: const Text('취소')),
+            FilledButton(
+              onPressed: () {
+                if (!formKey.currentState!.validate()) return;
+                final url = urlController.text.trim();
+                Navigator.of(context).pop(
+                  _LinkDraft(
+                    url: url,
+                    title: titleController.text.trim(),
+                    description: descriptionController.text.trim(),
+                    type: preview?.type ?? _linkType(url),
+                    thumbnailUrl: preview?.thumbnailUrl,
+                  ),
+                );
+              },
+              child: const Text('추가'),
+            ),
+          ],
+        ),
+      ),
+    );
+
+    urlController.dispose();
+    titleController.dispose();
+    descriptionController.dispose();
+
+    if (draft != null) {
+      setState(() => _links.add(draft));
+    }
+  }
+
+  void _removeLink(int index) {
+    final link = _links[index];
+    setState(() {
+      if (link.id != null) {
+        _deletedAttachmentIds.add(link.id!);
+      }
+      _links.removeAt(index);
+    });
+  }
+
+  void _removeExistingImage(int index) {
+    final image = _existingImages[index];
+    setState(() {
+      if (image.id != null) {
+        _deletedAttachmentIds.add(image.id!);
+      }
+      _existingImages.removeAt(index);
+    });
+  }
+
+  AttachmentType _linkType(String url) {
+    final host = Uri.tryParse(url)?.host.toLowerCase() ?? '';
+    return host.contains('youtube.com') || host.contains('youtu.be') ? AttachmentType.youtube : AttachmentType.url;
+  }
+
+  String _saveErrorText(Object error) {
+    final message = error.toString();
+    if (message.contains('XMLHttpRequest') ||
+        message.contains('Connection refused') ||
+        message.contains('SocketException')) {
+      return '백엔드 API에 연결할 수 없어요. 백엔드를 실행한 뒤 다시 시도해주세요.';
+    }
+    if (message.contains('이미 추가된 링크입니다')) {
+      return '이미 추가된 링크입니다.';
+    }
+    if (message.length > 140) {
+      return '저장하지 못했어요. 입력값과 백엔드 실행 상태를 확인해주세요.';
+    }
+    return '저장하지 못했어요: $message';
   }
 
   Future<void> _confirmLeave() async {
@@ -266,20 +553,34 @@ class _RecordFormScreenState extends ConsumerState<RecordFormScreen> {
       ),
     );
     if (shouldLeave == true && mounted) {
-      context.go('/home');
+      if (_isEdit) {
+        context.go('/records/${widget.recordId}');
+      } else if (_isClone) {
+        context.go('/records/${widget.cloneFromRecordId}/clone');
+      } else {
+        context.go('/home');
+      }
     }
   }
 }
 
-class _PickedImageGrid extends StatelessWidget {
-  const _PickedImageGrid({required this.images, required this.onRemove});
+class _ImageDraftGrid extends StatelessWidget {
+  const _ImageDraftGrid({
+    required this.existingImages,
+    required this.pickedImages,
+    required this.onRemoveExisting,
+    required this.onRemovePicked,
+  });
 
-  final List<XFile> images;
-  final ValueChanged<int> onRemove;
+  final List<_ExistingImageDraft> existingImages;
+  final List<XFile> pickedImages;
+  final ValueChanged<int> onRemoveExisting;
+  final ValueChanged<int> onRemovePicked;
 
   @override
   Widget build(BuildContext context) {
-    if (images.isEmpty) {
+    final itemCount = existingImages.length + pickedImages.length;
+    if (itemCount == 0) {
       return Container(
         height: 120,
         decoration: BoxDecoration(
@@ -306,8 +607,10 @@ class _PickedImageGrid extends StatelessWidget {
         crossAxisSpacing: 10,
         mainAxisSpacing: 10,
       ),
-      itemCount: images.length,
+      itemCount: itemCount,
       itemBuilder: (context, index) {
+        final existing = index < existingImages.length ? existingImages[index] : null;
+        final pickedIndex = index - existingImages.length;
         return Stack(
           children: [
             Container(
@@ -315,33 +618,275 @@ class _PickedImageGrid extends StatelessWidget {
               height: double.infinity,
               padding: const EdgeInsets.all(10),
               decoration: BoxDecoration(color: AppColors.surfaceHigh, borderRadius: BorderRadius.circular(16)),
-              child: Column(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  const Icon(Icons.image_outlined, color: AppColors.primary),
-                  const SizedBox(height: 6),
-                  Text(
-                    images[index].name,
-                    maxLines: 2,
-                    overflow: TextOverflow.ellipsis,
-                    textAlign: TextAlign.center,
-                    style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w700),
-                  ),
-                ],
-              ),
+              child: existing == null
+                  ? Column(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        const Icon(Icons.image_outlined, color: AppColors.primary),
+                        const SizedBox(height: 6),
+                        Text(
+                          pickedImages[pickedIndex].name,
+                          maxLines: 2,
+                          overflow: TextOverflow.ellipsis,
+                          textAlign: TextAlign.center,
+                          style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w700),
+                        ),
+                      ],
+                    )
+                  : _ExistingImageThumb(image: existing),
             ),
             Positioned(
               top: 4,
               right: 4,
               child: IconButton.filledTonal(
                 tooltip: '사진 삭제',
-                onPressed: () => onRemove(index),
+                onPressed: () => existing == null ? onRemovePicked(pickedIndex) : onRemoveExisting(index),
                 icon: const Icon(Icons.close, size: 16),
               ),
             ),
           ],
         );
       },
+    );
+  }
+}
+
+class _ExistingImageDraft {
+  const _ExistingImageDraft({
+    this.id,
+    this.title,
+    this.thumbnailUrl,
+    this.objectKey,
+  });
+
+  final int? id;
+  final String? title;
+  final String? thumbnailUrl;
+  final String? objectKey;
+}
+
+class _ExistingImageThumb extends StatelessWidget {
+  const _ExistingImageThumb({required this.image});
+
+  final _ExistingImageDraft image;
+
+  @override
+  Widget build(BuildContext context) {
+    if (image.thumbnailUrl == null) {
+      return const Icon(Icons.image_outlined, color: AppColors.primary);
+    }
+    return ClipRRect(
+      borderRadius: BorderRadius.circular(12),
+      child: Image.network(
+        image.thumbnailUrl!,
+        width: double.infinity,
+        height: double.infinity,
+        fit: BoxFit.cover,
+        errorBuilder: (context, error, stackTrace) {
+          return const Icon(Icons.image_outlined, color: AppColors.primary);
+        },
+      ),
+    );
+  }
+}
+
+class _LinkDraft {
+  const _LinkDraft({
+    this.id,
+    required this.url,
+    required this.title,
+    required this.description,
+    required this.type,
+    this.thumbnailUrl,
+  });
+
+  final int? id;
+  final String url;
+  final String title;
+  final String description;
+  final AttachmentType type;
+  final String? thumbnailUrl;
+}
+
+class _LinkDraftList extends StatelessWidget {
+  const _LinkDraftList({
+    required this.links,
+    required this.onRemove,
+  });
+
+  final List<_LinkDraft> links;
+  final ValueChanged<int> onRemove;
+
+  @override
+  Widget build(BuildContext context) {
+    if (links.isEmpty) {
+      return Container(
+        width: double.infinity,
+        padding: const EdgeInsets.all(18),
+        decoration: BoxDecoration(color: AppColors.surfaceLow, borderRadius: BorderRadius.circular(18)),
+        child: const Row(
+          children: [
+            Icon(Icons.link, color: AppColors.outline),
+            SizedBox(width: 10),
+            Expanded(
+              child: Text(
+                'YouTube나 외부 레시피 링크를 추가해두세요',
+                style: TextStyle(color: AppColors.textMuted, fontWeight: FontWeight.w700),
+              ),
+            ),
+          ],
+        ),
+      );
+    }
+
+    return Column(
+      children: [
+        for (var index = 0; index < links.length; index++) ...[
+          _LinkDraftTile(
+            link: links[index],
+            onRemove: () => onRemove(index),
+          ),
+          if (index != links.length - 1) const SizedBox(height: 10),
+        ],
+      ],
+    );
+  }
+}
+
+class _LinkPreviewBox extends StatelessWidget {
+  const _LinkPreviewBox({this.preview, this.error});
+
+  final AttachmentPreview? preview;
+  final String? error;
+
+  @override
+  Widget build(BuildContext context) {
+    if (error != null) {
+      return Container(
+        width: double.infinity,
+        padding: const EdgeInsets.all(12),
+        decoration: BoxDecoration(color: AppColors.surfaceLow, borderRadius: BorderRadius.circular(14)),
+        child: Text(error!, style: const TextStyle(color: AppColors.textMuted, fontSize: 13)),
+      );
+    }
+
+    final data = preview;
+    if (data == null) return const SizedBox.shrink();
+    final isYoutube = data.type == AttachmentType.youtube;
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(color: AppColors.surfaceLow, borderRadius: BorderRadius.circular(14)),
+      child: Row(
+        children: [
+          _LinkThumb(thumbnailUrl: data.thumbnailUrl, isYoutube: isYoutube),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  data.title ?? (isYoutube ? 'YouTube 영상' : '참고 링크'),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(fontWeight: FontWeight.w900),
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  data.url,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(color: AppColors.textMuted, fontSize: 12),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _LinkDraftTile extends StatelessWidget {
+  const _LinkDraftTile({required this.link, required this.onRemove});
+
+  final _LinkDraft link;
+  final VoidCallback onRemove;
+
+  @override
+  Widget build(BuildContext context) {
+    final isYoutube = link.type == AttachmentType.youtube;
+    return Container(
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(color: AppColors.surfaceLow, borderRadius: BorderRadius.circular(18)),
+      child: Row(
+        children: [
+          _LinkThumb(thumbnailUrl: link.thumbnailUrl, isYoutube: isYoutube),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  link.title.isEmpty ? (isYoutube ? 'YouTube 링크' : '참고 링크') : link.title,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(fontWeight: FontWeight.w900),
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  link.url,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(color: AppColors.textMuted, fontSize: 12),
+                ),
+                if (link.description.isNotEmpty) ...[
+                  const SizedBox(height: 4),
+                  Text(
+                    link.description,
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(color: AppColors.textMuted, fontSize: 12),
+                  ),
+                ],
+              ],
+            ),
+          ),
+          IconButton(
+            tooltip: '링크 삭제',
+            onPressed: onRemove,
+            icon: const Icon(Icons.close),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _LinkThumb extends StatelessWidget {
+  const _LinkThumb({required this.thumbnailUrl, required this.isYoutube});
+
+  final String? thumbnailUrl;
+  final bool isYoutube;
+
+  @override
+  Widget build(BuildContext context) {
+    if (thumbnailUrl == null) {
+      return Icon(isYoutube ? Icons.play_circle : Icons.link, color: isYoutube ? AppColors.error : AppColors.primary);
+    }
+    return ClipRRect(
+      borderRadius: BorderRadius.circular(10),
+      child: SizedBox(
+        width: 52,
+        height: 40,
+        child: Image.network(
+          thumbnailUrl!,
+          fit: BoxFit.cover,
+          errorBuilder: (context, error, stackTrace) {
+            return Icon(isYoutube ? Icons.play_circle : Icons.link, color: isYoutube ? AppColors.error : AppColors.primary);
+          },
+        ),
+      ),
     );
   }
 }

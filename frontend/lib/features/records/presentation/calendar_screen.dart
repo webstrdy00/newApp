@@ -42,6 +42,7 @@ class _CalendarScreenState extends ConsumerState<CalendarScreen> {
           decoration: BoxDecoration(color: AppColors.surfaceLow, borderRadius: BorderRadius.circular(28)),
           child: AsyncContent(
             value: monthDays,
+            onRetry: () => ref.invalidate(calendarDaysProvider(DateTime(_focusedDay.year, _focusedDay.month))),
             builder: (days) {
               final counts = {for (final day in days) DateUtils.dateOnly(day.date): day.count};
               return TableCalendar<int>(
@@ -82,7 +83,7 @@ class _CalendarScreenState extends ConsumerState<CalendarScreen> {
               ),
             ),
             FilledButton.tonal(
-              onPressed: () => context.go('/records/new'),
+              onPressed: () => context.go('/records/new?date=${_dateParam(_selectedDay)}'),
               child: const Text('기록 작성'),
             ),
           ],
@@ -90,12 +91,13 @@ class _CalendarScreenState extends ConsumerState<CalendarScreen> {
         const SizedBox(height: 18),
         AsyncContent(
           value: selectedRecords,
+          onRetry: () => ref.invalidate(recordsByDateProvider(_selectedDay)),
           builder: (records) {
             if (records.isEmpty) {
               return EmptyState(
                 message: '이 날짜에는 기록이 없어요',
                 actionLabel: '이 날짜로 기록 작성',
-                onAction: () => context.go('/records/new'),
+                onAction: () => context.go('/records/new?date=${_dateParam(_selectedDay)}'),
               );
             }
             return Column(
@@ -115,4 +117,6 @@ class _CalendarScreenState extends ConsumerState<CalendarScreen> {
       ],
     );
   }
+
+  String _dateParam(DateTime date) => date.toIso8601String().split('T').first;
 }

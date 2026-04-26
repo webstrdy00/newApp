@@ -1,4 +1,5 @@
 from datetime import date
+from urllib.parse import urlparse
 
 from fastapi import HTTPException, status
 from sqlalchemy import Select, and_, func, or_, select
@@ -8,12 +9,17 @@ from app.models.record import AttachmentType, CookingRecord, RecordAttachment, R
 from app.schemas.record import (
     AttachmentCreate,
     AttachmentLinkCreate,
+    AttachmentPreviewRead,
     CookingRecordCreate,
     CookingRecordUpdate,
     IngredientCreate,
     SearchFilter,
 )
-from app.services.youtube import extract_youtube_video_id, youtube_thumbnail_url
+from app.services.youtube import (
+    extract_youtube_video_id,
+    fetch_youtube_oembed_title,
+    youtube_thumbnail_url,
+)
 
 
 def record_select() -> Select[tuple[CookingRecord]]:
@@ -66,6 +72,26 @@ def infer_link_attachment(payload: AttachmentLinkCreate, sort_order: int = 0) ->
         description=payload.description,
         thumbnail_url=thumbnail_url,
         sort_order=sort_order,
+    )
+
+
+def preview_link(raw_url: str) -> AttachmentPreviewRead:
+    parsed = urlparse(raw_url)
+    if parsed.scheme not in {"http", "https"} or not parsed.netloc:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="올바른 URL을 입력해주세요.",
+        )
+
+    video_id = extract_youtube_video_id(raw_url)
+    if video_id is None:
+        return AttachmentPreviewRead(type=AttachmentType.URL, url=raw_url)
+
+    return AttachmentPreviewRead(
+        type=AttachmentType.YOUTUBE,
+        url=raw_url,
+        title=fetch_youtube_oembed_title(raw_url) or "YouTube 영상",
+        thumbnail_url=youtube_thumbnail_url(video_id),
     )
 
 
@@ -226,6 +252,18 @@ def add_image_attachment(
     db.commit()
     db.refresh(attachment)
     return attachment
+
+
+def delete_attachment(db: Session, record_id: int, attachment_id: int) -> None:
+    record = get_record(db, record_id)
+    attachment = next((item for item in record.attachments if item.id == attachment_id), None)
+    if attachment is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="첨부 자료를 찾을 수 없어요.",
+        )
+    db.delete(attachment)
+    db.commit()
 
 
 def search_records(

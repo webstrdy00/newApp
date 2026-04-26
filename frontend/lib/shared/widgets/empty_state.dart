@@ -6,13 +6,17 @@ class EmptyState extends StatelessWidget {
   const EmptyState({
     super.key,
     required this.message,
+    this.description,
     this.actionLabel,
     this.onAction,
+    this.icon = Icons.rice_bowl_outlined,
   });
 
   final String message;
+  final String? description;
   final String? actionLabel;
   final VoidCallback? onAction;
+  final IconData icon;
 
   @override
   Widget build(BuildContext context) {
@@ -25,9 +29,17 @@ class EmptyState extends StatelessWidget {
       ),
       child: Column(
         children: [
-          const Icon(Icons.rice_bowl_outlined, size: 42, color: AppColors.outline),
+          Icon(icon, size: 42, color: AppColors.outline),
           const SizedBox(height: 12),
-          Text(message, style: const TextStyle(fontWeight: FontWeight.w800)),
+          Text(message, textAlign: TextAlign.center, style: const TextStyle(fontWeight: FontWeight.w800)),
+          if (description != null) ...[
+            const SizedBox(height: 6),
+            Text(
+              description!,
+              textAlign: TextAlign.center,
+              style: const TextStyle(color: AppColors.textMuted, height: 1.4),
+            ),
+          ],
           if (actionLabel != null && onAction != null) ...[
             const SizedBox(height: 16),
             FilledButton(onPressed: onAction, child: Text(actionLabel!)),

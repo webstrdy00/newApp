@@ -84,6 +84,29 @@ class RecordAttachment {
   }
 }
 
+class AttachmentPreview {
+  const AttachmentPreview({
+    required this.type,
+    required this.url,
+    this.title,
+    this.thumbnailUrl,
+  });
+
+  final AttachmentType type;
+  final String url;
+  final String? title;
+  final String? thumbnailUrl;
+
+  factory AttachmentPreview.fromJson(Map<String, dynamic> json) {
+    return AttachmentPreview(
+      type: AttachmentType.fromJson(json['type'] as String),
+      url: json['url'] as String,
+      title: json['title'] as String?,
+      thumbnailUrl: json['thumbnail_url'] as String?,
+    );
+  }
+}
+
 class CookingRecord {
   const CookingRecord({
     required this.id,

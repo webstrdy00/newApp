@@ -21,7 +21,13 @@ final appRouterProvider = Provider<GoRouter>((ref) {
           GoRoute(path: '/calendar', builder: (context, state) => const CalendarScreen()),
           GoRoute(path: '/search', builder: (context, state) => const SearchScreen()),
           GoRoute(path: '/menu', builder: (context, state) => const MenuScreen()),
-          GoRoute(path: '/records/new', builder: (context, state) => const RecordFormScreen()),
+          GoRoute(
+            path: '/records/new',
+            builder: (context, state) => RecordFormScreen(
+              initialDate: DateTime.tryParse(state.uri.queryParameters['date'] ?? ''),
+              cloneFromRecordId: int.tryParse(state.uri.queryParameters['cloneFrom'] ?? ''),
+            ),
+          ),
           GoRoute(
             path: '/records/:id',
             builder: (context, state) => RecordDetailScreen(

@@ -1,3 +1,4 @@
+import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
@@ -30,6 +31,7 @@ class RecordDetailScreen extends ConsumerWidget {
       ),
       body: AsyncContent(
         value: record,
+        onRetry: () => ref.invalidate(recordProvider(recordId)),
         builder: (data) => ListView(
           padding: const EdgeInsets.fromLTRB(20, 18, 20, 120),
           children: [
@@ -47,7 +49,7 @@ class RecordDetailScreen extends ConsumerWidget {
               ],
             ),
             const SizedBox(height: 24),
-            _ImageHero(attachments: data.attachments),
+            _ImageGallery(attachments: data.attachments),
             const SizedBox(height: 26),
             _DetailSection(
               icon: Icons.restaurant_menu,
@@ -109,32 +111,191 @@ class RecordDetailScreen extends ConsumerWidget {
       ),
     );
     if (confirmed != true) return;
-    await ref.read(recordsRepositoryProvider).delete(recordId);
-    ref.invalidate(todayRecordsProvider);
-    ref.invalidate(recentRecordsProvider);
-    if (context.mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('기록이 삭제되었어요')));
-      context.go('/home');
+    try {
+      await ref.read(recordsRepositoryProvider).delete(recordId);
+      ref.invalidate(todayRecordsProvider);
+      ref.invalidate(recentRecordsProvider);
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('기록이 삭제되었어요')));
+        context.go('/home');
+      }
+    } catch (_) {
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('기록을 삭제하지 못했어요')));
+      }
     }
   }
 }
 
-class _ImageHero extends StatelessWidget {
-  const _ImageHero({required this.attachments});
+class _ImageGallery extends StatelessWidget {
+  const _ImageGallery({required this.attachments});
 
   final List<RecordAttachment> attachments;
 
   @override
   Widget build(BuildContext context) {
-    final image = attachments.where((item) => item.thumbnailUrl != null).firstOrNull;
+    final images = attachments.where((item) => item.type == AttachmentType.image && item.thumbnailUrl != null).toList();
+    if (images.isEmpty) {
+      return Container(
+        height: 220,
+        decoration: BoxDecoration(color: AppColors.surfaceHigh, borderRadius: BorderRadius.circular(24)),
+        child: const Center(child: Icon(Icons.restaurant, size: 56, color: AppColors.outline)),
+      );
+    }
+
+    return Column(
+      children: [
+        _ImageTile(
+          url: images.first.thumbnailUrl!,
+          height: 280,
+          onTap: () => _openImageViewer(context, images, 0),
+        ),
+        if (images.length > 1) ...[
+          const SizedBox(height: 10),
+          SizedBox(
+            height: 72,
+            child: ListView.separated(
+              scrollDirection: Axis.horizontal,
+              itemCount: images.length,
+              separatorBuilder: (_, __) => const SizedBox(width: 8),
+              itemBuilder: (context, index) => _ImageTile(
+                url: images[index].thumbnailUrl!,
+                width: 72,
+                height: 72,
+                onTap: () => _openImageViewer(context, images, index),
+              ),
+            ),
+          ),
+        ],
+      ],
+    );
+  }
+
+  void _openImageViewer(BuildContext context, List<RecordAttachment> images, int initialIndex) {
+    showDialog<void>(
+      context: context,
+      builder: (context) => _ImageViewer(images: images, initialIndex: initialIndex),
+    );
+  }
+}
+
+class _ImageTile extends StatelessWidget {
+  const _ImageTile({
+    required this.url,
+    required this.height,
+    required this.onTap,
+    this.width,
+  });
+
+  final String url;
+  final double height;
+  final double? width;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
     return ClipRRect(
-      borderRadius: BorderRadius.circular(24),
-      child: Container(
-        height: 280,
+      borderRadius: BorderRadius.circular(width == null ? 24 : 14),
+      child: Material(
         color: AppColors.surfaceHigh,
-        child: image == null
-            ? const Center(child: Icon(Icons.restaurant, size: 56, color: AppColors.outline))
-            : Image.network(image.thumbnailUrl!, fit: BoxFit.cover),
+        child: InkWell(
+          onTap: onTap,
+          child: SizedBox(
+            width: width ?? double.infinity,
+            height: height,
+            child: CachedNetworkImage(
+              imageUrl: url,
+              fit: BoxFit.cover,
+              errorWidget: (context, url, error) {
+                return const Center(child: Icon(Icons.restaurant, size: 48, color: AppColors.outline));
+              },
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _ImageViewer extends StatefulWidget {
+  const _ImageViewer({required this.images, required this.initialIndex});
+
+  final List<RecordAttachment> images;
+  final int initialIndex;
+
+  @override
+  State<_ImageViewer> createState() => _ImageViewerState();
+}
+
+class _ImageViewerState extends State<_ImageViewer> {
+  late final PageController _controller;
+  late int _index;
+
+  @override
+  void initState() {
+    super.initState();
+    _index = widget.initialIndex;
+    _controller = PageController(initialPage: widget.initialIndex);
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Dialog.fullscreen(
+      backgroundColor: Colors.black,
+      child: Stack(
+        children: [
+          PageView.builder(
+            controller: _controller,
+            onPageChanged: (index) => setState(() => _index = index),
+            itemCount: widget.images.length,
+            itemBuilder: (context, index) {
+              final url = widget.images[index].thumbnailUrl!;
+              return InteractiveViewer(
+                minScale: 1,
+                maxScale: 4,
+                child: Center(
+                  child: CachedNetworkImage(
+                    imageUrl: url,
+                    fit: BoxFit.contain,
+                    errorWidget: (context, url, error) {
+                      return const Icon(Icons.broken_image_outlined, color: Colors.white70, size: 56);
+                    },
+                  ),
+                ),
+              );
+            },
+          ),
+          SafeArea(
+            child: Padding(
+              padding: const EdgeInsets.all(12),
+              child: Row(
+                children: [
+                  IconButton.filledTonal(
+                    onPressed: () => Navigator.of(context).pop(),
+                    icon: const Icon(Icons.close),
+                  ),
+                  const Spacer(),
+                  DecoratedBox(
+                    decoration: BoxDecoration(color: Colors.black54, borderRadius: BorderRadius.circular(999)),
+                    child: Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                      child: Text(
+                        '${_index + 1} / ${widget.images.length}',
+                        style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w800),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ],
       ),
     );
   }
@@ -212,14 +373,37 @@ class _AttachmentsList extends StatelessWidget {
             contentPadding: EdgeInsets.zero,
             leading: Icon(item.type == AttachmentType.youtube ? Icons.play_circle : Icons.link, color: AppColors.primaryContainer),
             title: Text(item.title ?? item.url ?? '참고 링크', maxLines: 1, overflow: TextOverflow.ellipsis),
-            subtitle: Text(item.url ?? '', maxLines: 1, overflow: TextOverflow.ellipsis),
-            onTap: item.url == null ? null : () => launchUrl(Uri.parse(item.url!), mode: LaunchMode.externalApplication),
+            subtitle: Text(
+              item.description?.isNotEmpty == true ? item.description! : item.url ?? '',
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+            ),
+            onTap: item.url == null ? null : () => _openLink(context, item.url!),
           ),
       ],
     );
   }
-}
 
-extension _FirstOrNull<T> on Iterable<T> {
-  T? get firstOrNull => isEmpty ? null : first;
+  Future<void> _openLink(BuildContext context, String url) async {
+    final uri = Uri.tryParse(url);
+    if (uri == null) {
+      _showOpenError(context);
+      return;
+    }
+
+    try {
+      final opened = await launchUrl(uri, mode: LaunchMode.externalApplication);
+      if (!opened && context.mounted) {
+        _showOpenError(context);
+      }
+    } catch (_) {
+      if (context.mounted) {
+        _showOpenError(context);
+      }
+    }
+  }
+
+  void _showOpenError(BuildContext context) {
+    ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('링크를 열 수 없어요')));
+  }
 }

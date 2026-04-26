@@ -49,6 +49,10 @@ class HomeScreen extends ConsumerWidget {
             const SizedBox(height: 14),
             AsyncContent(
               value: todayRecords,
+              onRetry: () {
+                ref.invalidate(todayRecordsProvider);
+                ref.invalidate(recentRecordsProvider);
+              },
               builder: (records) {
                 if (records.isEmpty) {
                   return EmptyState(
@@ -82,6 +86,10 @@ class HomeScreen extends ConsumerWidget {
             const SizedBox(height: 14),
             AsyncContent(
               value: recentRecords,
+              onRetry: () {
+                ref.invalidate(todayRecordsProvider);
+                ref.invalidate(recentRecordsProvider);
+              },
               builder: (records) {
                 if (records.isEmpty) {
                   return const EmptyState(message: '최근 기록이 없어요');

@@ -28,7 +28,8 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final query = SearchQuery(text: _controller.text, filter: _filter);
+    final queryText = _controller.text.trim();
+    final query = SearchQuery(text: queryText, filter: _filter);
     final results = ref.watch(searchResultsProvider(query));
 
     return ListView(
@@ -38,7 +39,7 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
           children: [
             IconButton(onPressed: () => context.go('/home'), icon: const Icon(Icons.arrow_back)),
             const Expanded(child: Text('검색', style: TextStyle(fontSize: 26, fontWeight: FontWeight.w900))),
-            IconButton(onPressed: () {}, icon: const Icon(Icons.tune)),
+            IconButton(onPressed: _showFilterSheet, icon: const Icon(Icons.tune)),
           ],
         ),
         const SizedBox(height: 16),
@@ -48,26 +49,24 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
           decoration: InputDecoration(
             prefixIcon: const Icon(Icons.search),
             hintText: '요리명, 재료, 메모 등으로 검색하세요',
-            suffixIcon: _controller.text.isEmpty
+            suffixIcon: queryText.isEmpty
                 ? null
                 : IconButton(
-                    onPressed: () => setState(_controller.clear),
+                    onPressed: _clearSearch,
                     icon: const Icon(Icons.close),
                   ),
           ),
           onChanged: (_) => setState(() {}),
-          onSubmitted: (value) {
-            final trimmed = value.trim();
-            if (trimmed.isEmpty) return;
-            setState(() {
-              _recent.remove(trimmed);
-              _recent.insert(0, trimmed);
-              if (_recent.length > 10) _recent.removeLast();
-            });
-          },
+          onSubmitted: _submitSearch,
         ),
         const SizedBox(height: 24),
-        if (_recent.isNotEmpty) _KeywordPanel(title: '최근 검색어', keywords: _recent, onTap: _setQuery),
+        if (_recent.isNotEmpty)
+          _KeywordPanel(
+            title: '최근 검색어',
+            keywords: _recent,
+            onTap: _setQuery,
+            onClear: () => setState(_recent.clear),
+          ),
         if (_recent.isNotEmpty) const SizedBox(height: 18),
         _KeywordPanel(
           title: '추천 키워드',
@@ -93,18 +92,27 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
           children: [
             const Text('검색 결과', style: TextStyle(fontSize: 20, fontWeight: FontWeight.w900)),
             const SizedBox(width: 8),
-            Text(_controller.text.trim().isEmpty ? '' : '최신순', style: const TextStyle(color: AppColors.textMuted)),
+            Text(queryText.isEmpty ? '' : '최신순', style: const TextStyle(color: AppColors.textMuted)),
           ],
         ),
         const SizedBox(height: 14),
         AsyncContent(
           value: results,
+          onRetry: () => ref.invalidate(searchResultsProvider(query)),
           builder: (records) {
             if (_controller.text.trim().isEmpty) {
-              return const EmptyState(message: '찾고 싶은 요리를 검색해보세요');
+              return const EmptyState(
+                message: '찾고 싶은 요리를 검색해보세요',
+                description: '요리명, 재료, 메모, 링크 제목으로 찾을 수 있어요.',
+                icon: Icons.search,
+              );
             }
             if (records.isEmpty) {
-              return const EmptyState(message: '검색 결과가 없어요');
+              return const EmptyState(
+                message: '검색 결과가 없어요',
+                description: '다른 재료명이나 요리명으로 다시 검색해보세요.',
+                icon: Icons.manage_search,
+              );
             }
             return Column(
               children: [
@@ -121,11 +129,51 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
   }
 
   void _setQuery(String value) {
-    setState(() => _controller.text = value);
+    _submitSearch(value);
   }
 
   void _setFilter(String value) {
     setState(() => _filter = value);
+  }
+
+  void _submitSearch(String value) {
+    final trimmed = value.trim();
+    if (trimmed.isEmpty) return;
+    setState(() {
+      _controller.text = trimmed;
+      _controller.selection = TextSelection.collapsed(offset: trimmed.length);
+      _recent.remove(trimmed);
+      _recent.insert(0, trimmed);
+      if (_recent.length > 10) _recent.removeLast();
+    });
+  }
+
+  void _clearSearch() {
+    setState(_controller.clear);
+  }
+
+  Future<void> _showFilterSheet() async {
+    final selected = await showModalBottomSheet<String>(
+      context: context,
+      showDragHandle: true,
+      builder: (context) => SafeArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            _FilterOption(label: '전체', value: 'all', selected: _filter == 'all'),
+            _FilterOption(label: '요리명', value: 'dish', selected: _filter == 'dish'),
+            _FilterOption(label: '재료', value: 'ingredient', selected: _filter == 'ingredient'),
+            _FilterOption(label: '메모', value: 'memo', selected: _filter == 'memo'),
+            _FilterOption(label: '링크', value: 'link', selected: _filter == 'link'),
+            const SizedBox(height: 8),
+          ],
+        ),
+      ),
+    );
+    if (!mounted) return;
+    if (selected != null) {
+      _setFilter(selected);
+    }
   }
 }
 
@@ -135,12 +183,14 @@ class _KeywordPanel extends StatelessWidget {
     required this.keywords,
     required this.onTap,
     this.accent = false,
+    this.onClear,
   });
 
   final String title;
   final List<String> keywords;
   final ValueChanged<String> onTap;
   final bool accent;
+  final VoidCallback? onClear;
 
   @override
   Widget build(BuildContext context) {
@@ -150,7 +200,16 @@ class _KeywordPanel extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text(title, style: const TextStyle(fontWeight: FontWeight.w900)),
+          Row(
+            children: [
+              Expanded(child: Text(title, style: const TextStyle(fontWeight: FontWeight.w900))),
+              if (onClear != null)
+                TextButton(
+                  onPressed: onClear,
+                  child: const Text('비우기'),
+                ),
+            ],
+          ),
           const SizedBox(height: 12),
           Wrap(
             spacing: 8,
@@ -166,6 +225,27 @@ class _KeywordPanel extends StatelessWidget {
           ),
         ],
       ),
+    );
+  }
+}
+
+class _FilterOption extends StatelessWidget {
+  const _FilterOption({
+    required this.label,
+    required this.value,
+    required this.selected,
+  });
+
+  final String label;
+  final String value;
+  final bool selected;
+
+  @override
+  Widget build(BuildContext context) {
+    return ListTile(
+      title: Text(label),
+      trailing: selected ? const Icon(Icons.check, color: AppColors.primary) : null,
+      onTap: () => Navigator.of(context).pop(value),
     );
   }
 }

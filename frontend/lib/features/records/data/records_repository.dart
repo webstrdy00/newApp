@@ -95,19 +95,34 @@ class RecordsRepository {
     return RecordAttachment.fromJson(response.data!);
   }
 
+  Future<AttachmentPreview> previewLink(String url) async {
+    final response = await _dio.get<Map<String, dynamic>>(
+      '/records/attachments/preview',
+      queryParameters: {'url': url},
+    );
+    return AttachmentPreview.fromJson(response.data!);
+  }
+
   Future<RecordAttachment> uploadImage({
     required int recordId,
-    required String path,
+    required List<int> bytes,
     required String fileName,
   }) async {
     final formData = FormData.fromMap({
-      'image': await MultipartFile.fromFile(path, filename: fileName),
+      'image': MultipartFile.fromBytes(bytes, filename: fileName),
     });
     final response = await _dio.post<Map<String, dynamic>>(
       '/records/$recordId/attachments/images',
       data: formData,
     );
     return RecordAttachment.fromJson(response.data!);
+  }
+
+  Future<void> deleteAttachment({
+    required int recordId,
+    required int attachmentId,
+  }) async {
+    await _dio.delete<void>('/records/$recordId/attachments/$attachmentId');
   }
 
   static List<CookingRecord> _recordsFromResponse(List<dynamic>? data) {

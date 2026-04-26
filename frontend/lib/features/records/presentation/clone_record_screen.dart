@@ -4,7 +4,7 @@ import 'package:go_router/go_router.dart';
 import 'package:intl/intl.dart';
 
 import '../../../core/theme/app_colors.dart';
-import '../data/records_repository.dart';
+import '../../../shared/widgets/async_content.dart';
 import 'record_providers.dart';
 
 class CloneRecordScreen extends ConsumerStatefulWidget {
@@ -28,10 +28,10 @@ class _CloneRecordScreenState extends ConsumerState<CloneRecordScreen> {
         leading: IconButton(onPressed: () => context.go('/records/${widget.recordId}'), icon: const Icon(Icons.arrow_back)),
         title: const Text('기록 복제', style: TextStyle(fontWeight: FontWeight.w900)),
       ),
-      body: record.when(
-        loading: () => const Center(child: CircularProgressIndicator()),
-        error: (error, stackTrace) => Center(child: Text('기록을 불러오지 못했어요\n$error')),
-        data: (data) => ListView(
+      body: AsyncContent(
+        value: record,
+        onRetry: () => ref.invalidate(recordProvider(widget.recordId)),
+        builder: (data) => ListView(
           padding: const EdgeInsets.fromLTRB(20, 24, 20, 120),
           children: [
             Container(
@@ -89,17 +89,11 @@ class _CloneRecordScreenState extends ConsumerState<CloneRecordScreen> {
     if (picked != null) setState(() => _date = picked);
   }
 
-  Future<void> _clone() async {
+  void _clone() {
     setState(() => _saving = true);
-    try {
-      final record = await ref.read(recordsRepositoryProvider).clone(widget.recordId, _date);
-      ref.invalidate(todayRecordsProvider);
-      ref.invalidate(recentRecordsProvider);
-      if (mounted) context.go('/records/${record.id}');
-    } catch (error) {
-      if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('복제하지 못했어요: $error')));
-    } finally {
-      if (mounted) setState(() => _saving = false);
+    final date = _date.toIso8601String().split('T').first;
+    if (mounted) {
+      context.go('/records/new?cloneFrom=${widget.recordId}&date=$date');
     }
   }
 }

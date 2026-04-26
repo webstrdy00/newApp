@@ -49,6 +49,13 @@ class AttachmentRead(BaseModel):
     created_at: datetime
 
 
+class AttachmentPreviewRead(BaseModel):
+    type: AttachmentType
+    url: str
+    title: str | None = None
+    thumbnail_url: str | None = None
+
+
 class CookingRecordBase(BaseModel):
     dish_name: str = Field(..., min_length=1, max_length=80)
     cooked_date: date
@@ -67,7 +74,7 @@ class CookingRecordBase(BaseModel):
 
 class CookingRecordCreate(CookingRecordBase):
     ingredients: list[IngredientCreate] = Field(default_factory=list, max_length=50)
-    attachments: list[AttachmentCreate] = Field(default_factory=list, max_length=10)
+    attachments: list[AttachmentCreate] = Field(default_factory=list, max_length=15)
 
 
 class CookingRecordUpdate(BaseModel):
@@ -77,7 +84,7 @@ class CookingRecordUpdate(BaseModel):
     memo: str | None = Field(default=None, max_length=1000)
     rating: int | None = Field(default=None, ge=1, le=5)
     ingredients: list[IngredientCreate] | None = Field(default=None, max_length=50)
-    attachments: list[AttachmentCreate] | None = Field(default=None, max_length=10)
+    attachments: list[AttachmentCreate] | None = Field(default=None, max_length=15)
 
 
 class CookingRecordSummary(BaseModel):

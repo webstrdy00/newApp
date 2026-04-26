@@ -8,6 +8,7 @@ from app.api.deps import db_session
 from app.models.record import CookingRecord
 from app.schemas.record import (
     AttachmentLinkCreate,
+    AttachmentPreviewRead,
     AttachmentRead,
     CalendarDay,
     CloneRequest,
@@ -24,7 +25,9 @@ from app.services.records import (
     clone_record,
     create_record,
     delete_record,
+    delete_attachment,
     get_record,
+    preview_link,
     record_select,
     search_records,
     update_record,
@@ -86,6 +89,11 @@ def search(
     return search_records(db, query=q, search_filter=search_filter, limit=limit)
 
 
+@router.get("/attachments/preview", response_model=AttachmentPreviewRead)
+def preview_attachment_link(url: str = Query(min_length=1)) -> AttachmentPreviewRead:
+    return preview_link(url)
+
+
 @router.post("", response_model=CookingRecordRead, status_code=status.HTTP_201_CREATED)
 def create(payload: CookingRecordCreate, db: Session = Depends(db_session)) -> CookingRecord:
     return create_record(db, payload)
@@ -143,3 +151,13 @@ def attach_image(
         object_key=object_key,
         thumbnail_url=thumbnail_url,
     )
+
+
+@router.delete("/{record_id}/attachments/{attachment_id}", status_code=status.HTTP_204_NO_CONTENT)
+def delete_record_attachment(
+    record_id: int,
+    attachment_id: int,
+    db: Session = Depends(db_session),
+) -> Response:
+    delete_attachment(db, record_id, attachment_id)
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
