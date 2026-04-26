@@ -1,0 +1,110 @@
+from datetime import date, datetime
+from typing import Literal
+
+from pydantic import AnyUrl, BaseModel, ConfigDict, Field, field_validator
+
+from app.models.record import AttachmentType
+
+
+class IngredientCreate(BaseModel):
+    name: str = Field(default="", max_length=80)
+    quantity: str | None = Field(default=None, max_length=80)
+
+
+class IngredientRead(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    name: str
+    quantity: str | None = None
+    sort_order: int
+
+
+class AttachmentLinkCreate(BaseModel):
+    url: AnyUrl
+    title: str | None = Field(default=None, max_length=200)
+    description: str | None = None
+
+
+class AttachmentCreate(BaseModel):
+    type: AttachmentType
+    title: str | None = Field(default=None, max_length=200)
+    url: AnyUrl | None = None
+    description: str | None = None
+    thumbnail_url: str | None = None
+    object_key: str | None = None
+
+
+class AttachmentRead(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    type: AttachmentType
+    title: str | None = None
+    url: str | None = None
+    description: str | None = None
+    thumbnail_url: str | None = None
+    object_key: str | None = None
+    sort_order: int
+    created_at: datetime
+
+
+class CookingRecordBase(BaseModel):
+    dish_name: str = Field(..., min_length=1, max_length=80)
+    cooked_date: date
+    recipe: str | None = Field(default=None, max_length=5000)
+    memo: str | None = Field(default=None, max_length=1000)
+    rating: int | None = Field(default=None, ge=1, le=5)
+
+    @field_validator("dish_name")
+    @classmethod
+    def strip_dish_name(cls, value: str) -> str:
+        stripped = value.strip()
+        if not stripped:
+            raise ValueError("요리명을 입력해주세요.")
+        return stripped
+
+
+class CookingRecordCreate(CookingRecordBase):
+    ingredients: list[IngredientCreate] = Field(default_factory=list, max_length=50)
+    attachments: list[AttachmentCreate] = Field(default_factory=list, max_length=10)
+
+
+class CookingRecordUpdate(BaseModel):
+    dish_name: str | None = Field(default=None, min_length=1, max_length=80)
+    cooked_date: date | None = None
+    recipe: str | None = Field(default=None, max_length=5000)
+    memo: str | None = Field(default=None, max_length=1000)
+    rating: int | None = Field(default=None, ge=1, le=5)
+    ingredients: list[IngredientCreate] | None = Field(default=None, max_length=50)
+    attachments: list[AttachmentCreate] | None = Field(default=None, max_length=10)
+
+
+class CookingRecordSummary(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    dish_name: str
+    cooked_date: date
+    memo: str | None = None
+    rating: int | None = None
+    created_at: datetime
+    updated_at: datetime
+    ingredients: list[IngredientRead] = Field(default_factory=list)
+    attachments: list[AttachmentRead] = Field(default_factory=list)
+
+
+class CookingRecordRead(CookingRecordSummary):
+    recipe: str | None = None
+
+
+class CloneRequest(BaseModel):
+    cooked_date: date
+
+
+class CalendarDay(BaseModel):
+    date: date
+    count: int
+
+
+SearchFilter = Literal["all", "dish", "ingredient", "memo", "link"]
