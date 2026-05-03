@@ -21,7 +21,7 @@ class RecordCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final image = record.attachments
-        .where((item) => item.type == AttachmentType.image || item.thumbnailUrl != null)
+        .where((item) => item.type == AttachmentType.image || item.resolvedImageUrl != null)
         .cast<RecordAttachment?>()
         .firstOrNull;
 
@@ -34,7 +34,7 @@ class RecordCard extends StatelessWidget {
         child: compact
             ? Row(
                 children: [
-                  _Thumb(url: image?.thumbnailUrl, size: 76),
+                  _Thumb(url: image?.resolvedImageUrl, size: 76),
                   const SizedBox(width: 14),
                   Expanded(child: _CardText(record: record, compact: true)),
                   const Icon(Icons.chevron_right, color: AppColors.outline),
@@ -43,7 +43,7 @@ class RecordCard extends StatelessWidget {
             : Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  _Thumb(url: image?.thumbnailUrl, height: 190),
+                  _Thumb(url: image?.resolvedImageUrl, height: 190),
                   const SizedBox(height: 14),
                   _CardText(record: record),
                 ],

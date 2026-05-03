@@ -1,0 +1,177 @@
+from datetime import date, timedelta
+
+import pytest
+from fastapi import HTTPException
+from sqlalchemy import create_engine
+from sqlalchemy.orm import Session
+
+from app.db.session import Base
+from app.models.record import AttachmentType
+from app.schemas.record import (
+    AttachmentCreate,
+    CookingRecordCreate,
+    CookingRecordUpdate,
+    IngredientCreate,
+)
+from app.services import records as records_service
+from app.services.records import (
+    calendar_days,
+    clone_record,
+    create_record,
+    delete_attachment,
+    delete_record,
+    search_records,
+    update_record,
+)
+
+
+@pytest.fixture
+def db() -> Session:
+    engine = create_engine("sqlite+pysqlite:///:memory:")
+    Base.metadata.create_all(engine)
+    with Session(engine, expire_on_commit=False) as session:
+        yield session
+    Base.metadata.drop_all(engine)
+    engine.dispose()
+
+
+def record_payload(
+    *,
+    dish_name: str = "김치찌개",
+    cooked_date: date | None = None,
+    ingredients: list[IngredientCreate] | None = None,
+    attachments: list[AttachmentCreate] | None = None,
+) -> CookingRecordCreate:
+    return CookingRecordCreate(
+        dish_name=dish_name,
+        cooked_date=cooked_date or date(2026, 4, 26),
+        recipe="끓인다",
+        memo="다음에는 두부 추가",
+        rating=4,
+        ingredients=ingredients or [IngredientCreate(name="김치", quantity="200g")],
+        attachments=attachments or [],
+    )
+
+
+def image_attachment(object_key: str) -> AttachmentCreate:
+    return AttachmentCreate(
+        type=AttachmentType.IMAGE,
+        title="photo.jpg",
+        object_key=object_key,
+        thumbnail_url=f"http://localhost:8000/api/files/{object_key}",
+    )
+
+
+def test_create_search_calendar_and_clone_record(db: Session) -> None:
+    record = create_record(
+        db,
+        record_payload(
+            ingredients=[
+                IngredientCreate(name="김치", quantity="200g"),
+                IngredientCreate(name="두부", quantity="1모"),
+            ],
+            attachments=[
+                AttachmentCreate(type=AttachmentType.URL, url="https://example.com/recipe")
+            ],
+        ),
+    )
+
+    assert record.id is not None
+    assert record.dish_name == "김치찌개"
+    assert [item.name for item in record.ingredients] == ["김치", "두부"]
+
+    assert [item.id for item in search_records(db, query="두부")] == [record.id]
+    assert calendar_days(db, year=2026, month=4) == [(date(2026, 4, 26), 1)]
+
+    cloned = clone_record(db, record.id, date(2026, 4, 27))
+
+    assert cloned.id != record.id
+    assert cloned.dish_name == record.dish_name
+    assert cloned.cooked_date == date(2026, 4, 27)
+    assert cloned.ingredients[0].id != record.ingredients[0].id
+
+
+def test_create_record_rejects_future_date(db: Session) -> None:
+    with pytest.raises(HTTPException) as exc_info:
+        create_record(db, record_payload(cooked_date=date.today() + timedelta(days=1)))
+
+    assert exc_info.value.status_code == 422
+    assert exc_info.value.detail == "미래 날짜에는 기록을 저장할 수 없어요."
+
+
+def test_create_record_rejects_quantity_without_ingredient_name(db: Session) -> None:
+    with pytest.raises(HTTPException) as exc_info:
+        create_record(
+            db,
+            record_payload(ingredients=[IngredientCreate(name="", quantity="1개")]),
+        )
+
+    assert exc_info.value.status_code == 422
+    assert exc_info.value.detail == "재료명 없이 수량만 입력할 수 없어요."
+
+
+def test_create_record_rejects_duplicate_links(db: Session) -> None:
+    duplicate_url = "https://example.com/recipe"
+
+    with pytest.raises(HTTPException) as exc_info:
+        create_record(
+            db,
+            record_payload(
+                attachments=[
+                    AttachmentCreate(type=AttachmentType.URL, url=duplicate_url),
+                    AttachmentCreate(type=AttachmentType.URL, url=duplicate_url),
+                ],
+            ),
+        )
+
+    assert exc_info.value.status_code == 422
+    assert exc_info.value.detail == "이미 추가된 링크입니다."
+
+
+def test_update_record_deletes_removed_image_object(
+    db: Session,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    deleted_keys: list[str] = []
+    monkeypatch.setattr(records_service.storage_service, "delete_object", deleted_keys.append)
+
+    record = create_record(
+        db,
+        record_payload(attachments=[image_attachment("records/images/original.jpg")]),
+    )
+
+    update_record(db, record.id, CookingRecordUpdate(attachments=[]))
+
+    assert deleted_keys == ["records/images/original.jpg"]
+
+
+def test_delete_image_attachment_keeps_storage_object_while_clone_references_it(
+    db: Session,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    deleted_keys: list[str] = []
+    monkeypatch.setattr(records_service.storage_service, "delete_object", deleted_keys.append)
+
+    record = create_record(
+        db,
+        record_payload(attachments=[image_attachment("records/images/shared.jpg")]),
+    )
+    cloned = clone_record(db, record.id, date(2026, 4, 27))
+
+    delete_attachment(db, record.id, record.attachments[0].id)
+
+    assert deleted_keys == []
+
+    delete_record(db, cloned.id)
+
+    assert deleted_keys == ["records/images/shared.jpg"]
+
+
+def test_delete_missing_attachment_returns_404(db: Session) -> None:
+    record = create_record(db, record_payload())
+
+    with pytest.raises(HTTPException) as exc_info:
+        delete_attachment(db, record.id, 999)
+
+    assert exc_info.value.status_code == 404
+    assert exc_info.value.detail == "첨부 자료를 찾을 수 없어요."

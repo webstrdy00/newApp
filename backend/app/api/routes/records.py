@@ -1,7 +1,7 @@
+from contextlib import suppress
 from datetime import date
 
 from fastapi import APIRouter, Depends, File, Query, Response, UploadFile, status
-from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.api.deps import db_session
@@ -26,6 +26,7 @@ from app.services.records import (
     create_record,
     delete_record,
     delete_attachment,
+    ensure_image_attachment_allowed,
     get_record,
     preview_link,
     record_select,
@@ -42,7 +43,10 @@ def list_recent_records(
     limit: int = Query(default=10, ge=1, le=50),
     db: Session = Depends(db_session),
 ) -> list[CookingRecord]:
-    stmt = record_select().order_by(CookingRecord.cooked_date.desc(), CookingRecord.updated_at.desc())
+    stmt = record_select().order_by(
+        CookingRecord.cooked_date.desc(),
+        CookingRecord.updated_at.desc(),
+    )
     return list(db.scalars(stmt.limit(limit)).unique())
 
 
@@ -76,7 +80,10 @@ def list_calendar_days(
     db: Session = Depends(db_session),
 ) -> list[CalendarDay]:
     year, month_number = (int(part) for part in month.split("-"))
-    return [CalendarDay(date=item_date, count=count) for item_date, count in calendar_days(db, year=year, month=month_number)]
+    return [
+        CalendarDay(date=item_date, count=count)
+        for item_date, count in calendar_days(db, year=year, month=month_number)
+    ]
 
 
 @router.get("/search", response_model=list[CookingRecordSummary])
@@ -119,7 +126,11 @@ def delete(record_id: int, db: Session = Depends(db_session)) -> Response:
     return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 
-@router.post("/{record_id}/clone", response_model=CookingRecordRead, status_code=status.HTTP_201_CREATED)
+@router.post(
+    "/{record_id}/clone",
+    response_model=CookingRecordRead,
+    status_code=status.HTTP_201_CREATED,
+)
 def clone(
     record_id: int,
     payload: CloneRequest,
@@ -128,7 +139,11 @@ def clone(
     return clone_record(db, record_id, payload.cooked_date)
 
 
-@router.post("/{record_id}/attachments/links", response_model=AttachmentRead, status_code=status.HTTP_201_CREATED)
+@router.post(
+    "/{record_id}/attachments/links",
+    response_model=AttachmentRead,
+    status_code=status.HTTP_201_CREATED,
+)
 def attach_link(
     record_id: int,
     payload: AttachmentLinkCreate,
@@ -137,20 +152,30 @@ def attach_link(
     return add_link_attachment(db, record_id, payload)
 
 
-@router.post("/{record_id}/attachments/images", response_model=AttachmentRead, status_code=status.HTTP_201_CREATED)
+@router.post(
+    "/{record_id}/attachments/images",
+    response_model=AttachmentRead,
+    status_code=status.HTTP_201_CREATED,
+)
 def attach_image(
     record_id: int,
     image: UploadFile = File(...),
     db: Session = Depends(db_session),
 ) -> AttachmentRead:
+    ensure_image_attachment_allowed(db, record_id)
     object_key, thumbnail_url = storage_service.save_upload(image)
-    return add_image_attachment(
-        db,
-        record_id,
-        title=image.filename,
-        object_key=object_key,
-        thumbnail_url=thumbnail_url,
-    )
+    try:
+        return add_image_attachment(
+            db,
+            record_id,
+            title=image.filename,
+            object_key=object_key,
+            thumbnail_url=thumbnail_url,
+        )
+    except Exception:
+        with suppress(Exception):
+            storage_service.delete_object(object_key)
+        raise
 
 
 @router.delete("/{record_id}/attachments/{attachment_id}", status_code=status.HTTP_204_NO_CONTENT)

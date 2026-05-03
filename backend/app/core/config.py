@@ -4,6 +4,19 @@ from pydantic import Field, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
+def parse_list_setting(value: str | list[str]) -> list[str]:
+    if isinstance(value, list):
+        return value
+    stripped = value.strip()
+    if not stripped:
+        return []
+    if stripped.startswith("["):
+        import json
+
+        return json.loads(stripped)
+    return [item.strip() for item in stripped.split(",") if item.strip()]
+
+
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8", extra="ignore")
 
@@ -17,18 +30,20 @@ class Settings(BaseSettings):
     minio_secret_key: str = "minioadmin"
     minio_bucket: str = "haemeoknote"
     minio_secure: bool = False
+    image_upload_max_bytes: int = 10 * 1024 * 1024
+    image_upload_allowed_content_types: list[str] = Field(
+        default_factory=lambda: ["image/jpeg", "image/png", "image/webp"]
+    )
 
     @field_validator("cors_origins", mode="before")
     @classmethod
     def parse_cors_origins(cls, value: str | list[str]) -> list[str]:
-        if isinstance(value, list):
-            return value
-        stripped = value.strip()
-        if stripped.startswith("["):
-            import json
+        return parse_list_setting(value)
 
-            return json.loads(stripped)
-        return [origin.strip() for origin in stripped.split(",") if origin.strip()]
+    @field_validator("image_upload_allowed_content_types", mode="before")
+    @classmethod
+    def parse_allowed_content_types(cls, value: str | list[str]) -> list[str]:
+        return [item.lower() for item in parse_list_setting(value)]
 
 
 @lru_cache

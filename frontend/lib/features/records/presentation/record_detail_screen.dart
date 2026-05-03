@@ -1,4 +1,3 @@
-import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
@@ -134,7 +133,7 @@ class _ImageGallery extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final images = attachments.where((item) => item.type == AttachmentType.image && item.thumbnailUrl != null).toList();
+    final images = attachments.where((item) => item.type == AttachmentType.image && item.resolvedImageUrl != null).toList();
     if (images.isEmpty) {
       return Container(
         height: 220,
@@ -146,7 +145,7 @@ class _ImageGallery extends StatelessWidget {
     return Column(
       children: [
         _ImageTile(
-          url: images.first.thumbnailUrl!,
+          url: images.first.resolvedImageUrl!,
           height: 280,
           onTap: () => _openImageViewer(context, images, 0),
         ),
@@ -159,7 +158,7 @@ class _ImageGallery extends StatelessWidget {
               itemCount: images.length,
               separatorBuilder: (_, __) => const SizedBox(width: 8),
               itemBuilder: (context, index) => _ImageTile(
-                url: images[index].thumbnailUrl!,
+                url: images[index].resolvedImageUrl!,
                 width: 72,
                 height: 72,
                 onTap: () => _openImageViewer(context, images, index),
@@ -203,10 +202,10 @@ class _ImageTile extends StatelessWidget {
           child: SizedBox(
             width: width ?? double.infinity,
             height: height,
-            child: CachedNetworkImage(
-              imageUrl: url,
+            child: Image.network(
+              url,
               fit: BoxFit.cover,
-              errorWidget: (context, url, error) {
+              errorBuilder: (context, error, stackTrace) {
                 return const Center(child: Icon(Icons.restaurant, size: 48, color: AppColors.outline));
               },
             ),
@@ -255,15 +254,15 @@ class _ImageViewerState extends State<_ImageViewer> {
             onPageChanged: (index) => setState(() => _index = index),
             itemCount: widget.images.length,
             itemBuilder: (context, index) {
-              final url = widget.images[index].thumbnailUrl!;
+              final url = widget.images[index].resolvedImageUrl!;
               return InteractiveViewer(
                 minScale: 1,
                 maxScale: 4,
                 child: Center(
-                  child: CachedNetworkImage(
-                    imageUrl: url,
+                  child: Image.network(
+                    url,
                     fit: BoxFit.contain,
-                    errorWidget: (context, url, error) {
+                    errorBuilder: (context, error, stackTrace) {
                       return const Icon(Icons.broken_image_outlined, color: Colors.white70, size: 56);
                     },
                   ),

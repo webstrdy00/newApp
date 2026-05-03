@@ -1,3 +1,5 @@
+import '../../../core/network/api_client.dart';
+
 enum AttachmentType {
   image,
   url,
@@ -58,6 +60,19 @@ class RecordAttachment {
   final String? thumbnailUrl;
   final String? objectKey;
   final int sortOrder;
+
+  String? get resolvedImageUrl {
+    final key = objectKey?.trim();
+    if (type == AttachmentType.image && key != null && key.isNotEmpty) {
+      return '${defaultApiBaseUrl.replaceFirst(RegExp(r'/$'), '')}/files/$key';
+    }
+
+    final thumbnail = thumbnailUrl?.trim();
+    if (thumbnail != null && thumbnail.isNotEmpty) {
+      return thumbnail;
+    }
+    return null;
+  }
 
   factory RecordAttachment.fromJson(Map<String, dynamic> json) {
     return RecordAttachment(

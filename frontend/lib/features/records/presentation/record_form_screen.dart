@@ -232,7 +232,7 @@ class _RecordFormScreenState extends ConsumerState<RecordFormScreen> {
               (item) => _ExistingImageDraft(
                 id: _isEdit ? item.id : null,
                 title: item.title,
-                thumbnailUrl: item.thumbnailUrl,
+                thumbnailUrl: item.resolvedImageUrl,
                 objectKey: item.objectKey,
               ),
             ),
@@ -356,147 +356,13 @@ class _RecordFormScreenState extends ConsumerState<RecordFormScreen> {
   }
 
   Future<void> _showLinkDialog() async {
-    final formKey = GlobalKey<FormState>();
-    final urlController = TextEditingController();
-    final titleController = TextEditingController();
-    final descriptionController = TextEditingController();
-    AttachmentPreview? preview;
-    bool previewLoading = false;
-    String? previewError;
-
-    Future<void> loadPreview(StateSetter setDialogState) async {
-      final url = urlController.text.trim();
-      final uri = Uri.tryParse(url);
-      if (url.isEmpty || uri == null || !uri.hasScheme || uri.host.isEmpty) {
-        setDialogState(() => previewError = '올바른 URL을 입력해주세요');
-        return;
-      }
-
-      setDialogState(() {
-        previewLoading = true;
-        previewError = null;
-      });
-
-      try {
-        final result = await ref.read(recordsRepositoryProvider).previewLink(url);
-        if (!mounted) return;
-        setDialogState(() {
-          preview = result;
-          previewLoading = false;
-          if (titleController.text.trim().isEmpty && result.title != null) {
-            titleController.text = result.title!;
-          }
-        });
-      } catch (_) {
-        if (!mounted) return;
-        setDialogState(() {
-          preview = null;
-          previewLoading = false;
-          previewError = '미리보기를 가져오지 못했어요. URL은 그대로 저장할 수 있어요.';
-        });
-      }
-    }
-
     final draft = await showDialog<_LinkDraft>(
       context: context,
-      builder: (context) => StatefulBuilder(
-        builder: (context, setDialogState) => AlertDialog(
-          title: const Text('참고 링크 추가'),
-          content: Form(
-            key: formKey,
-            child: SizedBox(
-              width: 420,
-              child: SingleChildScrollView(
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    TextFormField(
-                      controller: urlController,
-                      decoration: InputDecoration(
-                        labelText: 'URL',
-                        hintText: 'https://...',
-                        suffixIcon: IconButton(
-                          tooltip: '미리보기',
-                          onPressed: previewLoading ? null : () => loadPreview(setDialogState),
-                          icon: previewLoading
-                              ? const SizedBox(
-                                  width: 18,
-                                  height: 18,
-                                  child: CircularProgressIndicator(strokeWidth: 2),
-                                )
-                              : const Icon(Icons.travel_explore),
-                        ),
-                      ),
-                      keyboardType: TextInputType.url,
-                      onChanged: (_) {
-                        setDialogState(() {
-                          preview = null;
-                          previewError = null;
-                        });
-                      },
-                      validator: (value) {
-                        final url = value?.trim() ?? '';
-                        final uri = Uri.tryParse(url);
-                        if (url.isEmpty || uri == null || !uri.hasScheme || uri.host.isEmpty) {
-                          return '올바른 URL을 입력해주세요';
-                        }
-                        if (_links.any((item) => item.url == url)) {
-                          return '이미 추가된 링크입니다';
-                        }
-                        return null;
-                      },
-                    ),
-                    if (preview != null || previewError != null) ...[
-                      const SizedBox(height: 12),
-                      _LinkPreviewBox(preview: preview, error: previewError),
-                    ],
-                    const SizedBox(height: 12),
-                    TextFormField(
-                      controller: titleController,
-                      decoration: const InputDecoration(labelText: '제목', hintText: '예: 참고한 레시피 영상'),
-                    ),
-                    const SizedBox(height: 12),
-                    TextFormField(
-                      controller: descriptionController,
-                      decoration: const InputDecoration(labelText: '메모', hintText: '참고한 부분을 적어두세요'),
-                      minLines: 2,
-                      maxLines: 3,
-                    ),
-                  ],
-                ),
-              ),
-            ),
-          ),
-          actions: [
-            TextButton(onPressed: () => Navigator.of(context).pop(), child: const Text('취소')),
-            FilledButton(
-              onPressed: () {
-                if (!formKey.currentState!.validate()) return;
-                final url = urlController.text.trim();
-                Navigator.of(context).pop(
-                  _LinkDraft(
-                    url: url,
-                    title: titleController.text.trim(),
-                    description: descriptionController.text.trim(),
-                    type: preview?.type ?? _linkType(url),
-                    thumbnailUrl: preview?.thumbnailUrl,
-                  ),
-                );
-              },
-              child: const Text('추가'),
-            ),
-          ],
-        ),
-      ),
+      builder: (context) => _LinkDialog(existingLinks: List.unmodifiable(_links)),
     );
 
-    urlController.dispose();
-    titleController.dispose();
-    descriptionController.dispose();
-
-    if (draft != null) {
-      setState(() => _links.add(draft));
-    }
+    if (!mounted || draft == null) return;
+    setState(() => _links.add(draft));
   }
 
   void _removeLink(int index) {
@@ -517,11 +383,6 @@ class _RecordFormScreenState extends ConsumerState<RecordFormScreen> {
       }
       _existingImages.removeAt(index);
     });
-  }
-
-  AttachmentType _linkType(String url) {
-    final host = Uri.tryParse(url)?.host.toLowerCase() ?? '';
-    return host.contains('youtube.com') || host.contains('youtu.be') ? AttachmentType.youtube : AttachmentType.url;
   }
 
   String _saveErrorText(Object error) {
@@ -750,6 +611,167 @@ class _LinkDraftList extends StatelessWidget {
         ],
       ],
     );
+  }
+}
+
+class _LinkDialog extends ConsumerStatefulWidget {
+  const _LinkDialog({required this.existingLinks});
+
+  final List<_LinkDraft> existingLinks;
+
+  @override
+  ConsumerState<_LinkDialog> createState() => _LinkDialogState();
+}
+
+class _LinkDialogState extends ConsumerState<_LinkDialog> {
+  final _formKey = GlobalKey<FormState>();
+  final _urlController = TextEditingController();
+  final _titleController = TextEditingController();
+  final _descriptionController = TextEditingController();
+
+  AttachmentPreview? _preview;
+  bool _previewLoading = false;
+  String? _previewError;
+
+  @override
+  void dispose() {
+    _urlController.dispose();
+    _titleController.dispose();
+    _descriptionController.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AlertDialog(
+      title: const Text('참고 링크 추가'),
+      content: Form(
+        key: _formKey,
+        child: SizedBox(
+          width: 420,
+          child: SingleChildScrollView(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                TextFormField(
+                  controller: _urlController,
+                  decoration: InputDecoration(
+                    labelText: 'URL',
+                    hintText: 'https://...',
+                    suffixIcon: IconButton(
+                      tooltip: '미리보기',
+                      onPressed: _previewLoading ? null : _loadPreview,
+                      icon: _previewLoading
+                          ? const SizedBox(
+                              width: 18,
+                              height: 18,
+                              child: CircularProgressIndicator(strokeWidth: 2),
+                            )
+                          : const Icon(Icons.travel_explore),
+                    ),
+                  ),
+                  keyboardType: TextInputType.url,
+                  onChanged: (_) {
+                    setState(() {
+                      _preview = null;
+                      _previewError = null;
+                    });
+                  },
+                  validator: _validateUrl,
+                ),
+                if (_preview != null || _previewError != null) ...[
+                  const SizedBox(height: 12),
+                  _LinkPreviewBox(preview: _preview, error: _previewError),
+                ],
+                const SizedBox(height: 12),
+                TextFormField(
+                  controller: _titleController,
+                  decoration: const InputDecoration(labelText: '제목', hintText: '예: 참고한 레시피 영상'),
+                ),
+                const SizedBox(height: 12),
+                TextFormField(
+                  controller: _descriptionController,
+                  decoration: const InputDecoration(labelText: '메모', hintText: '참고한 부분을 적어두세요'),
+                  minLines: 2,
+                  maxLines: 3,
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+      actions: [
+        TextButton(onPressed: () => Navigator.of(context).pop(), child: const Text('취소')),
+        FilledButton(
+          onPressed: _addLink,
+          child: const Text('추가'),
+        ),
+      ],
+    );
+  }
+
+  String? _validateUrl(String? value) {
+    final url = value?.trim() ?? '';
+    final uri = Uri.tryParse(url);
+    if (url.isEmpty || uri == null || !uri.hasScheme || uri.host.isEmpty) {
+      return '올바른 URL을 입력해주세요';
+    }
+    if (widget.existingLinks.any((item) => item.url == url)) {
+      return '이미 추가된 링크입니다';
+    }
+    return null;
+  }
+
+  Future<void> _loadPreview() async {
+    if (!_formKey.currentState!.validate()) return;
+
+    setState(() {
+      _previewLoading = true;
+      _previewError = null;
+    });
+
+    try {
+      final result = await ref.read(recordsRepositoryProvider).previewLink(_urlController.text.trim());
+      if (!mounted) return;
+      setState(() {
+        _preview = result;
+        _previewLoading = false;
+        if (_titleController.text.trim().isEmpty && result.title != null) {
+          _titleController.text = result.title!;
+        }
+      });
+    } catch (_) {
+      if (!mounted) return;
+      setState(() {
+        _preview = null;
+        _previewLoading = false;
+        _previewError = '미리보기를 가져오지 못했어요. URL은 그대로 저장할 수 있어요.';
+      });
+    }
+  }
+
+  void _addLink() {
+    if (!_formKey.currentState!.validate()) return;
+
+    final url = _urlController.text.trim();
+    Navigator.of(context).pop(
+      _LinkDraft(
+        url: url,
+        title: _titleController.text.trim(),
+        description: _descriptionController.text.trim(),
+        type: _preview?.type ?? _linkType(url),
+        thumbnailUrl: _preview?.thumbnailUrl,
+      ),
+    );
+  }
+
+  AttachmentType _linkType(String url) {
+    final host = Uri.tryParse(url)?.host.toLowerCase() ?? '';
+    final isYoutube = host == 'youtu.be' ||
+        host == 'www.youtu.be' ||
+        host == 'youtube.com' ||
+        host.endsWith('.youtube.com');
+    return isYoutube ? AttachmentType.youtube : AttachmentType.url;
   }
 }
 
