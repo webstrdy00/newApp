@@ -1,3 +1,4 @@
+from app.schemas.auth import LoginRequest, TokenResponse
 from app.schemas.record import (
     AttachmentLinkCreate,
     CalendarDay,
@@ -7,6 +8,7 @@ from app.schemas.record import (
     CookingRecordSummary,
     CookingRecordUpdate,
 )
+from app.schemas.user import UserCreate, UserRead
 
 __all__ = [
     "AttachmentLinkCreate",
@@ -16,4 +18,8 @@ __all__ = [
     "CookingRecordRead",
     "CookingRecordSummary",
     "CookingRecordUpdate",
+    "LoginRequest",
+    "TokenResponse",
+    "UserCreate",
+    "UserRead",
 ]

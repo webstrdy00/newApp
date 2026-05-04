@@ -3,16 +3,21 @@ services:
     build:
       context: ./backend
     environment:
-      DATABASE_URL: ${DATABASE_URL:-postgresql+psycopg://haemeoknote:haemeoknote@db:5432/haemeoknote}
-      MINIO_ENDPOINT: ${MINIO_ENDPOINT:-minio:9000}
+      DATABASE_URL: postgresql+psycopg://${POSTGRES_USER:-haemeoknote}:${POSTGRES_PASSWORD:-haemeoknote}@db:5432/${POSTGRES_DB:-haemeoknote}
+      MINIO_ENDPOINT: minio:9000
       MINIO_ACCESS_KEY: ${MINIO_ACCESS_KEY:-minioadmin}
       MINIO_SECRET_KEY: ${MINIO_SECRET_KEY:-minioadmin}
       MINIO_BUCKET: ${MINIO_BUCKET:-haemeoknote}
-      MINIO_SECURE: ${MINIO_SECURE:-false}
+      MINIO_SECURE: "false"
+      IMAGE_UPLOAD_MAX_BYTES: ${IMAGE_UPLOAD_MAX_BYTES:-10485760}
+      IMAGE_UPLOAD_ALLOWED_CONTENT_TYPES: ${IMAGE_UPLOAD_ALLOWED_CONTENT_TYPES:-["image/jpeg","image/png","image/webp"]}
+      JWT_SECRET_KEY: ${JWT_SECRET_KEY:-change-me-in-production-with-strong-secret}
+      JWT_ALGORITHM: ${JWT_ALGORITHM:-HS256}
+      ACCESS_TOKEN_EXPIRE_MINUTES: ${ACCESS_TOKEN_EXPIRE_MINUTES:-10080}
       API_CORS_ORIGINS: ${API_CORS_ORIGINS:-["*"]}
       API_PUBLIC_BASE_URL: ${API_PUBLIC_BASE_URL:-http://localhost:8000/api}
     ports:
-      - "8000:8000"
+      - "${API_PORT:-8000}:8000"
     depends_on:
       - db
       - minio
@@ -39,15 +44,15 @@ services:
       MINIO_ROOT_USER: ${MINIO_ACCESS_KEY:-minioadmin}
       MINIO_ROOT_PASSWORD: ${MINIO_SECRET_KEY:-minioadmin}
     ports:
-      - "9000:9000"
-      - "9001:9001"
+      - "${MINIO_API_PORT:-9000}:9000"
+      - "${MINIO_CONSOLE_PORT:-9001}:9001"
     volumes:
       - minio_data:/data
 
   adminer:
     image: adminer:5
     ports:
-      - "8080:8080"
+      - "${ADMINER_PORT:-8080}:8080"
     depends_on:
       - db
 

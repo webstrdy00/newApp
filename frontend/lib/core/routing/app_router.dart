@@ -1,6 +1,9 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
+import '../../features/auth/presentation/auth_providers.dart';
+import '../../features/auth/presentation/login_screen.dart';
+import '../../features/auth/presentation/register_screen.dart';
 import '../../features/menu/presentation/menu_screen.dart';
 import '../../features/records/presentation/calendar_screen.dart';
 import '../../features/records/presentation/clone_record_screen.dart';
@@ -11,9 +14,20 @@ import '../../features/search/presentation/search_screen.dart';
 import '../../shared/widgets/app_shell.dart';
 
 final appRouterProvider = Provider<GoRouter>((ref) {
+  final authState = ref.watch(authControllerProvider);
   return GoRouter(
     initialLocation: '/home',
+    redirect: (context, state) {
+      final location = state.uri.path;
+      final isAuthRoute = location == '/login' || location == '/register';
+      if (authState.isLoading) return null;
+      if (!authState.isAuthenticated && !isAuthRoute) return '/login';
+      if (authState.isAuthenticated && isAuthRoute) return '/home';
+      return null;
+    },
     routes: [
+      GoRoute(path: '/login', builder: (context, state) => const LoginScreen()),
+      GoRoute(path: '/register', builder: (context, state) => const RegisterScreen()),
       ShellRoute(
         builder: (context, state, child) => AppShell(location: state.uri.path, child: child),
         routes: [

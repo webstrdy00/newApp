@@ -34,6 +34,9 @@ class Settings(BaseSettings):
     image_upload_allowed_content_types: list[str] = Field(
         default_factory=lambda: ["image/jpeg", "image/png", "image/webp"]
     )
+    jwt_secret_key: str = "change-me-in-production-with-strong-secret"
+    jwt_algorithm: str = "HS256"
+    access_token_expire_minutes: int = 60 * 24 * 7
 
     @field_validator("cors_origins", mode="before")
     @classmethod

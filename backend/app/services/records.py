@@ -28,11 +28,14 @@ from app.services.youtube import (
 logger = logging.getLogger(__name__)
 
 
-def record_select() -> Select[tuple[CookingRecord]]:
-    return select(CookingRecord).options(
+def record_select(user_id: int | None = None) -> Select[tuple[CookingRecord]]:
+    stmt = select(CookingRecord).options(
         selectinload(CookingRecord.ingredients),
         selectinload(CookingRecord.attachments),
     )
+    if user_id is not None:
+        stmt = stmt.where(CookingRecord.user_id == user_id)
+    return stmt
 
 
 def image_object_keys(attachments: Iterable[RecordAttachment]) -> set[str]:
@@ -60,8 +63,8 @@ def delete_unreferenced_storage_objects(db: Session, object_keys: Iterable[str])
             logger.warning("Failed to delete storage object: %s", object_key, exc_info=True)
 
 
-def get_record(db: Session, record_id: int) -> CookingRecord:
-    record = db.scalar(record_select().where(CookingRecord.id == record_id))
+def get_record(db: Session, record_id: int, user_id: int) -> CookingRecord:
+    record = db.scalar(record_select(user_id).where(CookingRecord.id == record_id))
     if record is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="기록을 찾을 수 없어요.")
     return record
@@ -161,9 +164,10 @@ def build_attachments(items: list[AttachmentCreate]) -> list[RecordAttachment]:
     return attachments
 
 
-def create_record(db: Session, payload: CookingRecordCreate) -> CookingRecord:
+def create_record(db: Session, payload: CookingRecordCreate, user_id: int) -> CookingRecord:
     ensure_not_future(payload.cooked_date)
     record = CookingRecord(
+        user_id=user_id,
         dish_name=payload.dish_name,
         cooked_date=payload.cooked_date,
         recipe=payload.recipe,
@@ -174,11 +178,16 @@ def create_record(db: Session, payload: CookingRecordCreate) -> CookingRecord:
     )
     db.add(record)
     db.commit()
-    return get_record(db, record.id)
+    return get_record(db, record.id, user_id)
 
 
-def update_record(db: Session, record_id: int, payload: CookingRecordUpdate) -> CookingRecord:
-    record = get_record(db, record_id)
+def update_record(
+    db: Session,
+    record_id: int,
+    user_id: int,
+    payload: CookingRecordUpdate,
+) -> CookingRecord:
+    record = get_record(db, record_id, user_id)
     data = payload.model_dump(exclude_unset=True)
     deleted_object_keys: set[str] = set()
 
@@ -202,13 +211,14 @@ def update_record(db: Session, record_id: int, payload: CookingRecordUpdate) -> 
     db.add(record)
     db.commit()
     delete_unreferenced_storage_objects(db, deleted_object_keys)
-    return get_record(db, record.id)
+    return get_record(db, record.id, user_id)
 
 
-def clone_record(db: Session, record_id: int, cooked_date: date) -> CookingRecord:
+def clone_record(db: Session, record_id: int, user_id: int, cooked_date: date) -> CookingRecord:
     ensure_not_future(cooked_date)
-    source = get_record(db, record_id)
+    source = get_record(db, record_id, user_id)
     cloned = CookingRecord(
+        user_id=user_id,
         dish_name=source.dish_name,
         cooked_date=cooked_date,
         recipe=source.recipe,
@@ -233,11 +243,11 @@ def clone_record(db: Session, record_id: int, cooked_date: date) -> CookingRecor
     )
     db.add(cloned)
     db.commit()
-    return get_record(db, cloned.id)
+    return get_record(db, cloned.id, user_id)
 
 
-def delete_record(db: Session, record_id: int) -> None:
-    record = get_record(db, record_id)
+def delete_record(db: Session, record_id: int, user_id: int) -> None:
+    record = get_record(db, record_id, user_id)
     deleted_object_keys = image_object_keys(record.attachments)
     db.delete(record)
     db.commit()
@@ -247,9 +257,10 @@ def delete_record(db: Session, record_id: int) -> None:
 def add_link_attachment(
     db: Session,
     record_id: int,
+    user_id: int,
     payload: AttachmentLinkCreate,
 ) -> RecordAttachment:
-    record = get_record(db, record_id)
+    record = get_record(db, record_id, user_id)
     raw_url = str(payload.url)
     if any(item.url == raw_url for item in record.attachments):
         raise HTTPException(
@@ -264,8 +275,8 @@ def add_link_attachment(
     return attachment
 
 
-def ensure_image_attachment_allowed(db: Session, record_id: int) -> None:
-    record = get_record(db, record_id)
+def ensure_image_attachment_allowed(db: Session, record_id: int, user_id: int) -> None:
+    record = get_record(db, record_id, user_id)
     current_images = [item for item in record.attachments if item.type == AttachmentType.IMAGE]
     if len(current_images) >= 5:
         raise HTTPException(
@@ -277,13 +288,14 @@ def ensure_image_attachment_allowed(db: Session, record_id: int) -> None:
 def add_image_attachment(
     db: Session,
     record_id: int,
+    user_id: int,
     *,
     title: str | None,
     object_key: str,
     thumbnail_url: str | None,
 ) -> RecordAttachment:
-    record = get_record(db, record_id)
-    ensure_image_attachment_allowed(db, record_id)
+    record = get_record(db, record_id, user_id)
+    ensure_image_attachment_allowed(db, record_id, user_id)
     attachment = RecordAttachment(
         type=AttachmentType.IMAGE,
         title=title,
@@ -298,8 +310,8 @@ def add_image_attachment(
     return attachment
 
 
-def delete_attachment(db: Session, record_id: int, attachment_id: int) -> None:
-    record = get_record(db, record_id)
+def delete_attachment(db: Session, record_id: int, user_id: int, attachment_id: int) -> None:
+    record = get_record(db, record_id, user_id)
     attachment = next((item for item in record.attachments if item.id == attachment_id), None)
     if attachment is None:
         raise HTTPException(
@@ -315,6 +327,7 @@ def delete_attachment(db: Session, record_id: int, attachment_id: int) -> None:
 def search_records(
     db: Session,
     *,
+    user_id: int,
     query: str,
     search_filter: SearchFilter = "all",
     limit: int = 30,
@@ -341,7 +354,7 @@ def search_records(
         )
 
     stmt = (
-        record_select()
+        record_select(user_id)
         .outerjoin(RecordIngredient)
         .outerjoin(RecordAttachment)
         .where(or_(*conditions))
@@ -351,12 +364,18 @@ def search_records(
     return list(db.scalars(stmt).unique())
 
 
-def calendar_days(db: Session, *, year: int, month: int) -> list[tuple[date, int]]:
+def calendar_days(db: Session, *, user_id: int, year: int, month: int) -> list[tuple[date, int]]:
     start = date(year, month, 1)
     end = date(year + 1, 1, 1) if month == 12 else date(year, month + 1, 1)
     rows = db.execute(
         select(CookingRecord.cooked_date, func.count(CookingRecord.id))
-        .where(and_(CookingRecord.cooked_date >= start, CookingRecord.cooked_date < end))
+        .where(
+            and_(
+                CookingRecord.user_id == user_id,
+                CookingRecord.cooked_date >= start,
+                CookingRecord.cooked_date < end,
+            )
+        )
         .group_by(CookingRecord.cooked_date)
         .order_by(CookingRecord.cooked_date.asc())
     )

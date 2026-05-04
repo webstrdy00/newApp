@@ -5,6 +5,7 @@ from sqlalchemy import Date, DateTime, Enum as SqlEnum, ForeignKey, Integer, Str
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.db.session import Base
+from app.models.user import User
 
 
 class AttachmentType(str, PyEnum):
@@ -17,6 +18,7 @@ class CookingRecord(Base):
     __tablename__ = "cooking_records"
 
     id: Mapped[int] = mapped_column(primary_key=True, index=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), index=True)
     dish_name: Mapped[str] = mapped_column(String(80), index=True)
     cooked_date: Mapped[date] = mapped_column(Date, index=True)
     recipe: Mapped[str | None] = mapped_column(Text)
@@ -29,6 +31,7 @@ class CookingRecord(Base):
         onupdate=func.now(),
     )
 
+    user: Mapped["User"] = relationship(back_populates="records")
     ingredients: Mapped[list["RecordIngredient"]] = relationship(
         back_populates="record",
         cascade="all, delete-orphan",
