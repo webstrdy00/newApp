@@ -62,14 +62,14 @@ class RecordAttachment {
   final int sortOrder;
 
   String? get resolvedImageUrl {
-    final key = objectKey?.trim();
-    if (type == AttachmentType.image && key != null && key.isNotEmpty) {
-      return '${defaultApiBaseUrl.replaceFirst(RegExp(r'/$'), '')}/files/$key';
-    }
-
     final thumbnail = thumbnailUrl?.trim();
     if (thumbnail != null && thumbnail.isNotEmpty) {
       return thumbnail;
+    }
+
+    final key = objectKey?.trim();
+    if (type == AttachmentType.image && key != null && key.isNotEmpty) {
+      return '${defaultApiBaseUrl.replaceFirst(RegExp(r'/$'), '')}/files/$key';
     }
     return null;
   }

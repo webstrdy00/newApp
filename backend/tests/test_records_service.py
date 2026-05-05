@@ -16,6 +16,7 @@ from app.schemas.record import (
 )
 from app.services import records as records_service
 from app.services.records import (
+    add_image_attachment,
     calendar_days,
     clone_record,
     create_record,
@@ -167,10 +168,14 @@ def test_update_record_deletes_removed_image_object(
     deleted_keys: list[str] = []
     monkeypatch.setattr(records_service.storage_service, "delete_object", deleted_keys.append)
 
-    record = create_record(
+    record = create_record(db, record_payload(), user.id)
+    add_image_attachment(
         db,
-        record_payload(attachments=[image_attachment("records/images/original.jpg")]),
+        record.id,
         user.id,
+        title="photo.jpg",
+        object_key="records/images/original.jpg",
+        thumbnail_url=None,
     )
 
     update_record(db, record.id, user.id, CookingRecordUpdate(attachments=[]))
@@ -186,10 +191,14 @@ def test_delete_image_attachment_keeps_storage_object_while_clone_references_it(
     deleted_keys: list[str] = []
     monkeypatch.setattr(records_service.storage_service, "delete_object", deleted_keys.append)
 
-    record = create_record(
+    record = create_record(db, record_payload(), user.id)
+    add_image_attachment(
         db,
-        record_payload(attachments=[image_attachment("records/images/shared.jpg")]),
+        record.id,
         user.id,
+        title="photo.jpg",
+        object_key="records/images/shared.jpg",
+        thumbnail_url=None,
     )
     cloned = clone_record(db, record.id, user.id, date(2026, 4, 27))
 
@@ -200,6 +209,38 @@ def test_delete_image_attachment_keeps_storage_object_while_clone_references_it(
     delete_record(db, cloned.id, user.id)
 
     assert deleted_keys == ["records/images/shared.jpg"]
+
+
+def test_create_record_rejects_unowned_image_object_key(db: Session, user: User) -> None:
+    with pytest.raises(HTTPException) as exc_info:
+        create_record(
+            db,
+            record_payload(attachments=[image_attachment("records/images/unowned.jpg")]),
+            user.id,
+        )
+
+    assert exc_info.value.status_code == 422
+    assert exc_info.value.detail == "업로드된 본인 사진만 첨부할 수 있어요."
+
+
+def test_create_record_allows_owned_image_object_key(db: Session, user: User) -> None:
+    source = create_record(db, record_payload(), user.id)
+    add_image_attachment(
+        db,
+        source.id,
+        user.id,
+        title="photo.jpg",
+        object_key="records/images/owned.jpg",
+        thumbnail_url=None,
+    )
+
+    copied = create_record(
+        db,
+        record_payload(attachments=[image_attachment("records/images/owned.jpg")]),
+        user.id,
+    )
+
+    assert copied.attachments[0].object_key == "records/images/owned.jpg"
 
 
 def test_delete_missing_attachment_returns_404(db: Session, user: User) -> None:

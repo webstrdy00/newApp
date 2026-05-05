@@ -129,11 +129,52 @@ def preview_link(raw_url: str) -> AttachmentPreviewRead:
     )
 
 
-def build_attachments(items: list[AttachmentCreate]) -> list[RecordAttachment]:
+def owned_image_object_keys(db: Session, user_id: int, object_keys: Iterable[str]) -> set[str]:
+    keys = {key for key in object_keys if key}
+    if not keys:
+        return set()
+
+    return set(
+        db.scalars(
+            select(RecordAttachment.object_key)
+            .join(CookingRecord)
+            .where(
+                CookingRecord.user_id == user_id,
+                RecordAttachment.type == AttachmentType.IMAGE,
+                RecordAttachment.object_key.in_(keys),
+            )
+        )
+    )
+
+
+def build_attachments(
+    db: Session,
+    user_id: int,
+    items: list[AttachmentCreate],
+) -> list[RecordAttachment]:
     attachments: list[RecordAttachment] = []
     seen_urls: set[str] = set()
+    image_keys = {
+        item.object_key
+        for item in items
+        if item.type == AttachmentType.IMAGE and item.object_key
+    }
+    owned_image_keys = owned_image_object_keys(db, user_id, image_keys)
+
     for index, item in enumerate(items):
         raw_url = str(item.url) if item.url else None
+        if item.object_key and item.type != AttachmentType.IMAGE:
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+                detail="파일 첨부 정보가 올바르지 않습니다.",
+            )
+        if item.type == AttachmentType.IMAGE:
+            if raw_url or not item.object_key or item.object_key not in owned_image_keys:
+                raise HTTPException(
+                    status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+                    detail="업로드된 본인 사진만 첨부할 수 있어요.",
+                )
+
         if raw_url and raw_url in seen_urls:
             raise HTTPException(
                 status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
@@ -174,7 +215,7 @@ def create_record(db: Session, payload: CookingRecordCreate, user_id: int) -> Co
         memo=payload.memo,
         rating=payload.rating,
         ingredients=build_ingredients(payload.ingredients),
-        attachments=build_attachments(payload.attachments),
+        attachments=build_attachments(db, user_id, payload.attachments),
     )
     db.add(record)
     db.commit()
@@ -203,7 +244,7 @@ def update_record(
 
     if payload.attachments is not None:
         previous_object_keys = image_object_keys(record.attachments)
-        next_attachments = build_attachments(payload.attachments)
+        next_attachments = build_attachments(db, user_id, payload.attachments)
         next_object_keys = image_object_keys(next_attachments)
         deleted_object_keys = previous_object_keys - next_object_keys
         record.attachments = next_attachments

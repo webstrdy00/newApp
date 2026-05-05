@@ -108,8 +108,13 @@ class RecordsRepository {
     required List<int> bytes,
     required String fileName,
   }) async {
+    final contentType = _imageContentType(fileName);
     final formData = FormData.fromMap({
-      'image': MultipartFile.fromBytes(bytes, filename: fileName),
+      'image': MultipartFile.fromBytes(
+        bytes,
+        filename: fileName,
+        contentType: contentType,
+      ),
     });
     final response = await _dio.post<Map<String, dynamic>>(
       '/records/$recordId/attachments/images',
@@ -132,4 +137,18 @@ class RecordsRepository {
   }
 
   static String _dateString(DateTime date) => date.toIso8601String().split('T').first;
+
+  static DioMediaType _imageContentType(String fileName) {
+    final lowerName = fileName.toLowerCase();
+    if (lowerName.endsWith('.jpg') || lowerName.endsWith('.jpeg')) {
+      return DioMediaType('image', 'jpeg');
+    }
+    if (lowerName.endsWith('.png')) {
+      return DioMediaType('image', 'png');
+    }
+    if (lowerName.endsWith('.webp')) {
+      return DioMediaType('image', 'webp');
+    }
+    throw UnsupportedError('지원하지 않는 이미지 형식입니다.');
+  }
 }

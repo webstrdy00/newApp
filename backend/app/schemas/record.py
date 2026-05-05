@@ -1,9 +1,10 @@
 from datetime import date, datetime
 from typing import Literal
 
-from pydantic import AnyUrl, BaseModel, ConfigDict, Field, field_validator
+from pydantic import AnyUrl, BaseModel, ConfigDict, Field, field_serializer, field_validator
 
 from app.models.record import AttachmentType
+from app.services.storage import storage_service
 
 
 class IngredientCreate(BaseModel):
@@ -47,6 +48,12 @@ class AttachmentRead(BaseModel):
     object_key: str | None = None
     sort_order: int
     created_at: datetime
+
+    @field_serializer("thumbnail_url")
+    def serialize_thumbnail_url(self, value: str | None) -> str | None:
+        if self.type == AttachmentType.IMAGE and self.object_key:
+            return storage_service.file_url(self.object_key)
+        return value
 
 
 class AttachmentPreviewRead(BaseModel):

@@ -1,6 +1,10 @@
+from datetime import UTC, datetime, timedelta
+from urllib.parse import quote, urlencode
 from uuid import uuid4
 
 from fastapi import HTTPException, UploadFile, status
+import jwt
+from jwt import InvalidTokenError
 
 from app.core.config import settings
 
@@ -33,14 +37,49 @@ class StorageService:
             ExtraArgs={"ContentType": content_type},
         )
 
-        public_url = f"{settings.api_public_base_url.rstrip('/')}/files/{object_key}"
-        return object_key, public_url
+        return object_key, None
 
     def get_object(self, object_key: str):
         return self._client().get_object(Bucket=settings.minio_bucket, Key=object_key)
 
     def delete_object(self, object_key: str) -> None:
         self._client().delete_object(Bucket=settings.minio_bucket, Key=object_key)
+
+    def file_url(self, object_key: str) -> str:
+        safe_object_key = quote(object_key, safe="/")
+        query = urlencode({"token": self.create_file_access_token(object_key)})
+        return f"{settings.api_public_base_url.rstrip('/')}/files/{safe_object_key}?{query}"
+
+    def create_file_access_token(self, object_key: str) -> str:
+        now = datetime.now(UTC)
+        expire = now + timedelta(minutes=settings.file_access_token_expire_minutes)
+        payload = {
+            "sub": "file",
+            "object_key": object_key,
+            "iat": int(now.timestamp()),
+            "exp": int(expire.timestamp()),
+        }
+        return jwt.encode(payload, settings.jwt_secret_key, algorithm=settings.jwt_algorithm)
+
+    def ensure_file_access_token(self, object_key: str, token: str | None) -> None:
+        credentials_error = HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="파일을 찾을 수 없어요.",
+        )
+        if not token:
+            raise credentials_error
+
+        try:
+            payload = jwt.decode(
+                token,
+                settings.jwt_secret_key,
+                algorithms=[settings.jwt_algorithm],
+            )
+        except InvalidTokenError as exc:
+            raise credentials_error from exc
+
+        if payload.get("sub") != "file" or payload.get("object_key") != object_key:
+            raise credentials_error
 
     def validate_image_upload(self, upload: UploadFile) -> None:
         content_type = (upload.content_type or "").lower()

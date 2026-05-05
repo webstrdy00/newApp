@@ -395,6 +395,9 @@ class _RecordFormScreenState extends ConsumerState<RecordFormScreen> {
     if (message.contains('이미 추가된 링크입니다')) {
       return '이미 추가된 링크입니다.';
     }
+    if (message.contains('지원하지 않는 이미지 형식입니다')) {
+      return '지원하지 않는 이미지 형식입니다. JPG, PNG, WebP 파일을 선택해주세요.';
+    }
     if (message.length > 140) {
       return '저장하지 못했어요. 입력값과 백엔드 실행 상태를 확인해주세요.';
     }

@@ -1,3 +1,4 @@
+import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
@@ -20,12 +21,19 @@ final appRouterProvider = Provider<GoRouter>((ref) {
     redirect: (context, state) {
       final location = state.uri.path;
       final isAuthRoute = location == '/login' || location == '/register';
-      if (authState.isLoading) return null;
+      final isLoadingRoute = location == '/auth/loading';
+      if (authState.isLoading) {
+        return isLoadingRoute ? null : '/auth/loading';
+      }
+      if (isLoadingRoute) {
+        return authState.isAuthenticated ? '/home' : '/login';
+      }
       if (!authState.isAuthenticated && !isAuthRoute) return '/login';
       if (authState.isAuthenticated && isAuthRoute) return '/home';
       return null;
     },
     routes: [
+      GoRoute(path: '/auth/loading', builder: (context, state) => const _AuthLoadingScreen()),
       GoRoute(path: '/login', builder: (context, state) => const LoginScreen()),
       GoRoute(path: '/register', builder: (context, state) => const RegisterScreen()),
       ShellRoute(
@@ -65,3 +73,14 @@ final appRouterProvider = Provider<GoRouter>((ref) {
     ],
   );
 });
+
+class _AuthLoadingScreen extends StatelessWidget {
+  const _AuthLoadingScreen();
+
+  @override
+  Widget build(BuildContext context) {
+    return const Scaffold(
+      body: Center(child: CircularProgressIndicator()),
+    );
+  }
+}
