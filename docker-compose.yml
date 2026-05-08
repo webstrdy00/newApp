@@ -3,6 +3,7 @@ services:
     build:
       context: ./backend
     environment:
+      ENVIRONMENT: ${ENVIRONMENT:-local}
       DATABASE_URL: postgresql+psycopg://${POSTGRES_USER:-haemeoknote}:${POSTGRES_PASSWORD:-haemeoknote}@db:5432/${POSTGRES_DB:-haemeoknote}
       MINIO_ENDPOINT: minio:9000
       MINIO_ACCESS_KEY: ${MINIO_ACCESS_KEY:-minioadmin}

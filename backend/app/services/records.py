@@ -27,6 +27,10 @@ from app.services.youtube import (
 
 logger = logging.getLogger(__name__)
 
+MAX_IMAGE_ATTACHMENTS = 5
+MAX_LINK_ATTACHMENTS = 10
+MAX_TOTAL_ATTACHMENTS = 15
+
 
 def record_select(user_id: int | None = None) -> Select[tuple[CookingRecord]]:
     stmt = select(CookingRecord).options(
@@ -76,6 +80,36 @@ def ensure_not_future(cooked_date: date) -> None:
             status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
             detail="미래 날짜에는 기록을 저장할 수 없어요.",
         )
+
+
+def ensure_attachment_limits(attachments: Iterable[RecordAttachment]) -> None:
+    items = list(attachments)
+    image_count = sum(1 for item in items if item.type == AttachmentType.IMAGE)
+    link_count = len(items) - image_count
+    if image_count > MAX_IMAGE_ATTACHMENTS:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+            detail="사진은 최대 5장까지 첨부할 수 있어요.",
+        )
+    if link_count > MAX_LINK_ATTACHMENTS:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+            detail="링크는 최대 10개까지 첨부할 수 있어요.",
+        )
+    if len(items) > MAX_TOTAL_ATTACHMENTS:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+            detail="첨부 자료는 최대 15개까지 저장할 수 있어요.",
+        )
+
+
+def ensure_can_add_attachment(record: CookingRecord, attachment_type: AttachmentType) -> None:
+    ensure_attachment_limits(
+        [
+            *record.attachments,
+            RecordAttachment(type=attachment_type, sort_order=len(record.attachments)),
+        ]
+    )
 
 
 def build_ingredients(items: list[IngredientCreate]) -> list[RecordIngredient]:
@@ -202,6 +236,7 @@ def build_attachments(
                 sort_order=index,
             )
         )
+    ensure_attachment_limits(attachments)
     return attachments
 
 
@@ -302,6 +337,7 @@ def add_link_attachment(
     payload: AttachmentLinkCreate,
 ) -> RecordAttachment:
     record = get_record(db, record_id, user_id)
+    ensure_can_add_attachment(record, AttachmentType.URL)
     raw_url = str(payload.url)
     if any(item.url == raw_url for item in record.attachments):
         raise HTTPException(
@@ -318,12 +354,7 @@ def add_link_attachment(
 
 def ensure_image_attachment_allowed(db: Session, record_id: int, user_id: int) -> None:
     record = get_record(db, record_id, user_id)
-    current_images = [item for item in record.attachments if item.type == AttachmentType.IMAGE]
-    if len(current_images) >= 5:
-        raise HTTPException(
-            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
-            detail="사진은 최대 5장까지 첨부할 수 있어요.",
-        )
+    ensure_can_add_attachment(record, AttachmentType.IMAGE)
 
 
 def add_image_attachment(
@@ -406,6 +437,11 @@ def search_records(
 
 
 def calendar_days(db: Session, *, user_id: int, year: int, month: int) -> list[tuple[date, int]]:
+    if month < 1 or month > 12:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+            detail="월은 1부터 12 사이여야 합니다.",
+        )
     start = date(year, month, 1)
     end = date(year + 1, 1, 1) if month == 12 else date(year, month + 1, 1)
     rows = db.execute(

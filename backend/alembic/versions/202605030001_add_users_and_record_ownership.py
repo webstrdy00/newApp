@@ -5,6 +5,7 @@ Revises: 202604260001
 Create Date: 2026-05-03
 """
 from collections.abc import Sequence
+import os
 
 from alembic import op
 import bcrypt
@@ -61,10 +62,12 @@ def upgrade() -> None:
         sa.column("user_id", sa.Integer),
     )
 
-    legacy_password_hash = bcrypt.hashpw(
-        b"haemeoknote",
-        bcrypt.gensalt(),
-    ).decode("utf-8")
+    legacy_password = os.getenv("HAEMEOKNOTE_LEGACY_USER_PASSWORD")
+    legacy_password_hash = (
+        bcrypt.hashpw(legacy_password.encode("utf-8"), bcrypt.gensalt()).decode("utf-8")
+        if legacy_password
+        else "legacy-login-disabled"
+    )
     op.bulk_insert(
         users,
         [
@@ -75,6 +78,10 @@ def upgrade() -> None:
                 "display_name": "해먹노트 사용자",
             }
         ],
+    )
+    op.execute(
+        "SELECT setval(pg_get_serial_sequence('users', 'id'), "
+        "COALESCE((SELECT MAX(id) FROM users), 1), true)"
     )
     op.execute(cooking_records.update().values(user_id=1))
     op.alter_column("cooking_records", "user_id", nullable=False)

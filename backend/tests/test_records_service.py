@@ -2,13 +2,15 @@ from datetime import date, timedelta
 
 import pytest
 from fastapi import HTTPException
+from pydantic import ValidationError
 from sqlalchemy import create_engine
 from sqlalchemy.orm import Session
 
 from app.db.session import Base
-from app.models.record import AttachmentType
+from app.models.record import AttachmentType, RecordAttachment
 from app.models.user import User
 from app.schemas.record import (
+    AttachmentLinkCreate,
     AttachmentCreate,
     CookingRecordCreate,
     CookingRecordUpdate,
@@ -17,6 +19,7 @@ from app.schemas.record import (
 from app.services import records as records_service
 from app.services.records import (
     add_image_attachment,
+    add_link_attachment,
     calendar_days,
     clone_record,
     create_record,
@@ -90,6 +93,19 @@ def image_attachment(object_key: str) -> AttachmentCreate:
     )
 
 
+def test_link_payloads_reject_non_http_urls() -> None:
+    with pytest.raises(ValidationError):
+        AttachmentLinkCreate(url="ftp://example.com/recipe")
+
+    with pytest.raises(ValidationError):
+        AttachmentCreate(type=AttachmentType.URL, url="ftp://example.com/recipe")
+
+
+def test_update_payload_rejects_blank_dish_name() -> None:
+    with pytest.raises(ValidationError):
+        CookingRecordUpdate(dish_name="  ")
+
+
 def test_create_search_calendar_and_clone_record(db: Session, user: User) -> None:
     record = create_record(
         db,
@@ -158,6 +174,57 @@ def test_create_record_rejects_duplicate_links(db: Session, user: User) -> None:
 
     assert exc_info.value.status_code == 422
     assert exc_info.value.detail == "이미 추가된 링크입니다."
+
+
+def test_create_record_rejects_more_than_five_images(db: Session, user: User) -> None:
+    source = create_record(db, record_payload(), user.id)
+    source.attachments = [
+        RecordAttachment(
+            type=AttachmentType.IMAGE,
+            title=f"photo-{index}.jpg",
+            object_key=f"records/images/{index}.jpg",
+            sort_order=index,
+        )
+        for index in range(6)
+    ]
+    db.add(source)
+    db.commit()
+
+    with pytest.raises(HTTPException) as exc_info:
+        create_record(
+            db,
+            record_payload(
+                attachments=[
+                    image_attachment(f"records/images/{index}.jpg") for index in range(6)
+                ],
+            ),
+            user.id,
+        )
+
+    assert exc_info.value.status_code == 422
+    assert exc_info.value.detail == "사진은 최대 5장까지 첨부할 수 있어요."
+
+
+def test_add_link_attachment_rejects_more_than_ten_links(db: Session, user: User) -> None:
+    record = create_record(db, record_payload(), user.id)
+    for index in range(10):
+        add_link_attachment(
+            db,
+            record.id,
+            user.id,
+            AttachmentLinkCreate(url=f"https://example.com/recipe-{index}"),
+        )
+
+    with pytest.raises(HTTPException) as exc_info:
+        add_link_attachment(
+            db,
+            record.id,
+            user.id,
+            AttachmentLinkCreate(url="https://example.com/recipe-10"),
+        )
+
+    assert exc_info.value.status_code == 422
+    assert exc_info.value.detail == "링크는 최대 10개까지 첨부할 수 있어요."
 
 
 def test_update_record_deletes_removed_image_object(
@@ -269,3 +336,11 @@ def test_records_are_scoped_to_owner(db: Session, user: User, other_user: User) 
         )
 
     assert exc_info.value.status_code == 404
+
+
+def test_calendar_days_rejects_invalid_month(db: Session, user: User) -> None:
+    with pytest.raises(HTTPException) as exc_info:
+        calendar_days(db, user_id=user.id, year=2026, month=13)
+
+    assert exc_info.value.status_code == 422
+    assert exc_info.value.detail == "월은 1부터 12 사이여야 합니다."

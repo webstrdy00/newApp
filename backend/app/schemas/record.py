@@ -26,6 +26,13 @@ class AttachmentLinkCreate(BaseModel):
     title: str | None = Field(default=None, max_length=200)
     description: str | None = None
 
+    @field_validator("url")
+    @classmethod
+    def require_http_url(cls, value: AnyUrl) -> AnyUrl:
+        if value.scheme not in {"http", "https"}:
+            raise ValueError("http 또는 https URL만 사용할 수 있습니다.")
+        return value
+
 
 class AttachmentCreate(BaseModel):
     type: AttachmentType
@@ -34,6 +41,13 @@ class AttachmentCreate(BaseModel):
     description: str | None = None
     thumbnail_url: str | None = None
     object_key: str | None = None
+
+    @field_validator("url")
+    @classmethod
+    def require_http_url(cls, value: AnyUrl | None) -> AnyUrl | None:
+        if value is not None and value.scheme not in {"http", "https"}:
+            raise ValueError("http 또는 https URL만 사용할 수 있습니다.")
+        return value
 
 
 class AttachmentRead(BaseModel):
@@ -92,6 +106,16 @@ class CookingRecordUpdate(BaseModel):
     rating: int | None = Field(default=None, ge=1, le=5)
     ingredients: list[IngredientCreate] | None = Field(default=None, max_length=50)
     attachments: list[AttachmentCreate] | None = Field(default=None, max_length=15)
+
+    @field_validator("dish_name")
+    @classmethod
+    def strip_dish_name(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        stripped = value.strip()
+        if not stripped:
+            raise ValueError("요리명을 입력해주세요.")
+        return stripped
 
 
 class CookingRecordSummary(BaseModel):

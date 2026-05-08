@@ -5,6 +5,10 @@ from app.api.router import api_router
 from app.core.config import settings
 
 
+def allow_cors_credentials(cors_origins: list[str]) -> bool:
+    return "*" not in cors_origins
+
+
 def create_app() -> FastAPI:
     app = FastAPI(
         title="HaemeokNote API",
@@ -15,7 +19,7 @@ def create_app() -> FastAPI:
     app.add_middleware(
         CORSMiddleware,
         allow_origins=settings.cors_origins,
-        allow_credentials=True,
+        allow_credentials=allow_cors_credentials(settings.cors_origins),
         allow_methods=["*"],
         allow_headers=["*"],
     )

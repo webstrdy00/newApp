@@ -10,6 +10,7 @@ from app.services.auth import (
     create_access_token,
     create_user,
     decode_access_token,
+    verify_password,
 )
 
 
@@ -75,3 +76,7 @@ def test_decode_access_token_rejects_invalid_token() -> None:
 
     assert exc_info.value.status_code == 401
     assert exc_info.value.detail == "인증 정보가 유효하지 않습니다."
+
+
+def test_verify_password_rejects_disabled_legacy_hash() -> None:
+    assert verify_password("haemeoknote", "legacy-login-disabled") is False

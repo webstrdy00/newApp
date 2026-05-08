@@ -105,7 +105,10 @@ def search(
 
 
 @router.get("/attachments/preview", response_model=AttachmentPreviewRead)
-def preview_attachment_link(url: str = Query(min_length=1)) -> AttachmentPreviewRead:
+def preview_attachment_link(
+    url: str = Query(min_length=1),
+    _user: User = Depends(current_user),
+) -> AttachmentPreviewRead:
     return preview_link(url)
 
 
