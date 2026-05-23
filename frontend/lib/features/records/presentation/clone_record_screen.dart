@@ -25,7 +25,7 @@ class _CloneRecordScreenState extends ConsumerState<CloneRecordScreen> {
     final record = ref.watch(recordProvider(widget.recordId));
     return Scaffold(
       appBar: AppBar(
-        leading: IconButton(onPressed: () => context.go('/records/${widget.recordId}'), icon: const Icon(Icons.arrow_back)),
+        leading: IconButton(onPressed: _goBackToDetail, icon: const Icon(Icons.arrow_back)),
         title: const Text('기록 복제', style: TextStyle(fontWeight: FontWeight.w900)),
       ),
       body: AsyncContent(
@@ -44,7 +44,8 @@ class _CloneRecordScreenState extends ConsumerState<CloneRecordScreen> {
                   const SizedBox(height: 8),
                   Text(data.dishName, style: const TextStyle(fontSize: 26, fontWeight: FontWeight.w900)),
                   const SizedBox(height: 4),
-                  Text(DateFormat('yyyy년 M월 d일').format(data.cookedDate), style: const TextStyle(color: AppColors.textMuted)),
+                  Text(DateFormat('yyyy년 M월 d일').format(data.cookedDate),
+                      style: const TextStyle(color: AppColors.textMuted)),
                 ],
               ),
             ),
@@ -59,7 +60,9 @@ class _CloneRecordScreenState extends ConsumerState<CloneRecordScreen> {
                 decoration: BoxDecoration(color: AppColors.surfaceHigh, borderRadius: BorderRadius.circular(14)),
                 child: Row(
                   children: [
-                    Expanded(child: Text(DateFormat('yyyy.MM.dd').format(_date), style: const TextStyle(fontWeight: FontWeight.w800))),
+                    Expanded(
+                        child: Text(DateFormat('yyyy.MM.dd').format(_date),
+                            style: const TextStyle(fontWeight: FontWeight.w800))),
                     const Icon(Icons.calendar_today),
                   ],
                 ),
@@ -95,5 +98,13 @@ class _CloneRecordScreenState extends ConsumerState<CloneRecordScreen> {
     if (mounted) {
       context.go('/records/new?cloneFrom=${widget.recordId}&date=$date');
     }
+  }
+
+  void _goBackToDetail() {
+    if (context.canPop()) {
+      context.pop();
+      return;
+    }
+    context.go('/records/${widget.recordId}');
   }
 }

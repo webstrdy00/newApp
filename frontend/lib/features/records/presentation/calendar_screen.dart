@@ -33,7 +33,8 @@ class _CalendarScreenState extends ConsumerState<CalendarScreen> {
           children: [
             IconButton(onPressed: () => context.go('/menu'), icon: const Icon(Icons.menu)),
             const SizedBox(width: 8),
-            const Text('요리 캘린더', style: TextStyle(fontSize: 28, fontWeight: FontWeight.w900, color: AppColors.primaryContainer)),
+            const Text('요리 캘린더',
+                style: TextStyle(fontSize: 28, fontWeight: FontWeight.w900, color: AppColors.primaryContainer)),
           ],
         ),
         const SizedBox(height: 26),
@@ -78,7 +79,8 @@ class _CalendarScreenState extends ConsumerState<CalendarScreen> {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   const Text('선택한 날짜', style: TextStyle(color: AppColors.textMuted, fontWeight: FontWeight.w700)),
-                  Text(DateFormat('M월 d일 EEEE', 'ko').format(_selectedDay), style: const TextStyle(fontSize: 28, fontWeight: FontWeight.w900)),
+                  Text(DateFormat('M월 d일 EEEE', 'ko').format(_selectedDay),
+                      style: const TextStyle(fontSize: 28, fontWeight: FontWeight.w900)),
                 ],
               ),
             ),
@@ -106,7 +108,7 @@ class _CalendarScreenState extends ConsumerState<CalendarScreen> {
                   RecordCard(
                     record: record,
                     compact: true,
-                    onTap: () => context.go('/records/${record.id}'),
+                    onTap: () => context.push('/records/${record.id}'),
                   ),
                   const SizedBox(height: 14),
                 ],

@@ -71,7 +71,7 @@ class HomeScreen extends ConsumerWidget {
                         width: 310,
                         child: RecordCard(
                           record: record,
-                          onTap: () => context.go('/records/${record.id}'),
+                          onTap: () => context.push('/records/${record.id}'),
                         ),
                       );
                     },
@@ -100,7 +100,7 @@ class HomeScreen extends ConsumerWidget {
                       RecordCard(
                         record: record,
                         compact: true,
-                        onTap: () => context.go('/records/${record.id}'),
+                        onTap: () => context.push('/records/${record.id}'),
                       ),
                       const SizedBox(height: 14),
                     ],
@@ -130,7 +130,8 @@ class _HomeHeader extends StatelessWidget {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              const Text('해먹노트', style: TextStyle(fontSize: 28, fontWeight: FontWeight.w900, color: AppColors.primaryContainer)),
+              const Text('해먹노트',
+                  style: TextStyle(fontSize: 28, fontWeight: FontWeight.w900, color: AppColors.primaryContainer)),
               Text(today, style: const TextStyle(color: AppColors.textMuted, fontWeight: FontWeight.w700)),
             ],
           ),
@@ -160,7 +161,8 @@ class _SectionTitle extends StatelessWidget {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Text(trailing, style: const TextStyle(color: AppColors.primary, fontSize: 12, fontWeight: FontWeight.w900)),
+              Text(trailing,
+                  style: const TextStyle(color: AppColors.primary, fontSize: 12, fontWeight: FontWeight.w900)),
               Text(title, style: const TextStyle(fontSize: 30, fontWeight: FontWeight.w900)),
             ],
           ),

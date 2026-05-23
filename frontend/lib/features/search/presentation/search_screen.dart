@@ -117,7 +117,7 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
             return Column(
               children: [
                 for (final record in records) ...[
-                  RecordCard(record: record, onTap: () => context.go('/records/${record.id}')),
+                  RecordCard(record: record, onTap: () => context.push('/records/${record.id}')),
                   const SizedBox(height: 18),
                 ],
               ],

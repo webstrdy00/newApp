@@ -15,6 +15,42 @@ void main() {
     );
   });
 
+  test('record card thumbnail prefers uploaded image before youtube thumbnail', () {
+    final record = CookingRecord(
+      id: 1,
+      dishName: '김치찌개',
+      cookedDate: DateTime(2026, 5, 23),
+      attachments: const [
+        RecordAttachment(
+          type: AttachmentType.youtube,
+          thumbnailUrl: 'https://img.youtube.com/vi/abc123/hqdefault.jpg',
+        ),
+        RecordAttachment(
+          type: AttachmentType.image,
+          thumbnailUrl: 'http://localhost:8000/api/files/food.jpg?token=signed',
+        ),
+      ],
+    );
+
+    expect(record.cardThumbnailUrl, 'http://localhost:8000/api/files/food.jpg?token=signed');
+  });
+
+  test('record card thumbnail falls back to youtube when image is missing', () {
+    final record = CookingRecord(
+      id: 1,
+      dishName: '김치찌개',
+      cookedDate: DateTime(2026, 5, 23),
+      attachments: const [
+        RecordAttachment(
+          type: AttachmentType.youtube,
+          thumbnailUrl: 'https://img.youtube.com/vi/abc123/hqdefault.jpg',
+        ),
+      ],
+    );
+
+    expect(record.cardThumbnailUrl, 'https://img.youtube.com/vi/abc123/hqdefault.jpg');
+  });
+
   test('record draft serializes API payload', () {
     final draft = RecordDraft(
       dishName: '김치찌개',

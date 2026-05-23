@@ -21,11 +21,13 @@ class RecordDetailScreen extends ConsumerWidget {
     final record = ref.watch(recordProvider(recordId));
     return Scaffold(
       appBar: AppBar(
-        leading: IconButton(onPressed: () => context.go('/home'), icon: const Icon(Icons.arrow_back)),
+        leading: IconButton(onPressed: () => _goBackOrHome(context), icon: const Icon(Icons.arrow_back)),
         title: const Text('기록 상세', style: TextStyle(fontWeight: FontWeight.w900)),
         actions: [
-          IconButton(onPressed: () => context.go('/records/$recordId/edit'), icon: const Icon(Icons.edit)),
-          IconButton(onPressed: () => _confirmDelete(context, ref), icon: const Icon(Icons.delete_outline, color: AppColors.error)),
+          IconButton(onPressed: () => context.push('/records/$recordId/edit'), icon: const Icon(Icons.edit)),
+          IconButton(
+              onPressed: () => _confirmDelete(context, ref),
+              icon: const Icon(Icons.delete_outline, color: AppColors.error)),
         ],
       ),
       body: AsyncContent(
@@ -34,7 +36,8 @@ class RecordDetailScreen extends ConsumerWidget {
         builder: (data) => ListView(
           padding: const EdgeInsets.fromLTRB(20, 18, 20, 120),
           children: [
-            Text('저녁 로그', style: TextStyle(color: Theme.of(context).colorScheme.secondary, fontWeight: FontWeight.w900)),
+            Text('저녁 로그',
+                style: TextStyle(color: Theme.of(context).colorScheme.secondary, fontWeight: FontWeight.w900)),
             const SizedBox(height: 6),
             Text(data.dishName, style: const TextStyle(fontSize: 34, fontWeight: FontWeight.w900)),
             const SizedBox(height: 8),
@@ -42,7 +45,8 @@ class RecordDetailScreen extends ConsumerWidget {
               children: [
                 const Icon(Icons.calendar_today, size: 16, color: AppColors.textMuted),
                 const SizedBox(width: 6),
-                Text(DateFormat('yyyy년 M월 d일').format(data.cookedDate), style: const TextStyle(color: AppColors.textMuted, fontWeight: FontWeight.w700)),
+                Text(DateFormat('yyyy년 M월 d일').format(data.cookedDate),
+                    style: const TextStyle(color: AppColors.textMuted, fontWeight: FontWeight.w700)),
                 const SizedBox(width: 12),
                 StarRating(value: data.rating, size: 20),
               ],
@@ -62,8 +66,10 @@ class RecordDetailScreen extends ConsumerWidget {
                             padding: const EdgeInsets.symmetric(vertical: 9),
                             child: Row(
                               children: [
-                                Expanded(child: Text(ingredient.name, style: const TextStyle(color: AppColors.textMuted))),
-                                Text(ingredient.quantity ?? '', style: const TextStyle(color: AppColors.primary, fontWeight: FontWeight.w900)),
+                                Expanded(
+                                    child: Text(ingredient.name, style: const TextStyle(color: AppColors.textMuted))),
+                                Text(ingredient.quantity ?? '',
+                                    style: const TextStyle(color: AppColors.primary, fontWeight: FontWeight.w900)),
                               ],
                             ),
                           ),
@@ -77,7 +83,8 @@ class RecordDetailScreen extends ConsumerWidget {
             _DetailSection(
               icon: Icons.format_list_numbered,
               title: '조리 순서',
-              child: Text(data.recipe?.trim().isNotEmpty == true ? data.recipe! : '저장된 조리 순서가 없어요', style: const TextStyle(height: 1.6)),
+              child: Text(data.recipe?.trim().isNotEmpty == true ? data.recipe! : '저장된 조리 순서가 없어요',
+                  style: const TextStyle(height: 1.6)),
             ),
             const SizedBox(height: 20),
             _DetailSection(
@@ -87,7 +94,7 @@ class RecordDetailScreen extends ConsumerWidget {
             ),
             const SizedBox(height: 26),
             FilledButton.icon(
-              onPressed: () => context.go('/records/$recordId/clone'),
+              onPressed: () => context.push('/records/$recordId/clone'),
               icon: const Icon(Icons.copy),
               label: const Text('이 기록으로 다시 요리하기'),
             ),
@@ -124,6 +131,14 @@ class RecordDetailScreen extends ConsumerWidget {
       }
     }
   }
+
+  void _goBackOrHome(BuildContext context) {
+    if (context.canPop()) {
+      context.pop();
+      return;
+    }
+    context.go('/home');
+  }
 }
 
 class _ImageGallery extends StatelessWidget {
@@ -133,7 +148,8 @@ class _ImageGallery extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final images = attachments.where((item) => item.type == AttachmentType.image && item.resolvedImageUrl != null).toList();
+    final images =
+        attachments.where((item) => item.type == AttachmentType.image && item.resolvedImageUrl != null).toList();
     if (images.isEmpty) {
       return Container(
         height: 220,
@@ -319,7 +335,8 @@ class _DetailSection extends StatelessWidget {
             children: [
               Icon(icon, color: AppColors.secondary),
               const SizedBox(width: 8),
-              Text(title, style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w900, color: AppColors.secondary)),
+              Text(title,
+                  style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w900, color: AppColors.secondary)),
             ],
           ),
           const SizedBox(height: 14),
@@ -345,7 +362,11 @@ class _NoteBox extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Row(children: [Icon(icon, size: 18), const SizedBox(width: 6), Text(title, style: const TextStyle(fontWeight: FontWeight.w900))]),
+          Row(children: [
+            Icon(icon, size: 18),
+            const SizedBox(width: 6),
+            Text(title, style: const TextStyle(fontWeight: FontWeight.w900))
+          ]),
           const SizedBox(height: 8),
           Text(text, style: const TextStyle(height: 1.5)),
         ],
@@ -370,7 +391,8 @@ class _AttachmentsList extends StatelessWidget {
         for (final item in links)
           ListTile(
             contentPadding: EdgeInsets.zero,
-            leading: Icon(item.type == AttachmentType.youtube ? Icons.play_circle : Icons.link, color: AppColors.primaryContainer),
+            leading: Icon(item.type == AttachmentType.youtube ? Icons.play_circle : Icons.link,
+                color: AppColors.primaryContainer),
             title: Text(item.title ?? item.url ?? '참고 링크', maxLines: 1, overflow: TextOverflow.ellipsis),
             subtitle: Text(
               item.description?.isNotEmpty == true ? item.description! : item.url ?? '',

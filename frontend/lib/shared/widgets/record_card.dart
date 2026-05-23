@@ -20,10 +20,7 @@ class RecordCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final image = record.attachments
-        .where((item) => item.type == AttachmentType.image || item.resolvedImageUrl != null)
-        .cast<RecordAttachment?>()
-        .firstOrNull;
+    final thumbnailUrl = record.cardThumbnailUrl;
 
     return InkWell(
       borderRadius: BorderRadius.circular(24),
@@ -34,19 +31,34 @@ class RecordCard extends StatelessWidget {
         child: compact
             ? Row(
                 children: [
-                  _Thumb(url: image?.resolvedImageUrl, size: 76),
+                  _Thumb(url: thumbnailUrl, size: 76),
                   const SizedBox(width: 14),
                   Expanded(child: _CardText(record: record, compact: true)),
                   const Icon(Icons.chevron_right, color: AppColors.outline),
                 ],
               )
-            : Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  _Thumb(url: image?.resolvedImageUrl, height: 190),
-                  const SizedBox(height: 14),
-                  _CardText(record: record),
-                ],
+            : LayoutBuilder(
+                builder: (context, constraints) {
+                  if (!constraints.hasBoundedHeight) {
+                    return Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        _Thumb(url: thumbnailUrl, height: 190),
+                        const SizedBox(height: 14),
+                        _CardText(record: record),
+                      ],
+                    );
+                  }
+
+                  return Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Expanded(child: _Thumb(url: thumbnailUrl, height: double.infinity)),
+                      const SizedBox(height: 12),
+                      _CardText(record: record),
+                    ],
+                  );
+                },
               ),
       ),
     );
@@ -122,8 +134,4 @@ class _Thumb extends StatelessWidget {
       ),
     );
   }
-}
-
-extension _IterableFirstOrNull<T> on Iterable<T> {
-  T? get firstOrNull => isEmpty ? null : first;
 }

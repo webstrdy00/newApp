@@ -23,6 +23,14 @@ dev = [
   "ruff>=0.7.0"
 ]
 
+[build-system]
+requires = ["setuptools>=69.0"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+include = ["app*"]
+exclude = ["alembic*"]
+
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 

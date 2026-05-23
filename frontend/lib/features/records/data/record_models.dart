@@ -178,6 +178,22 @@ class CookingRecord {
     }
     return '남겨둔 메모가 없어요';
   }
+
+  String? get cardThumbnailUrl {
+    for (final attachment in attachments) {
+      if (attachment.type != AttachmentType.image) continue;
+      final url = attachment.resolvedImageUrl;
+      if (url != null) return url;
+    }
+
+    for (final attachment in attachments) {
+      if (attachment.type != AttachmentType.youtube) continue;
+      final url = attachment.resolvedImageUrl;
+      if (url != null) return url;
+    }
+
+    return null;
+  }
 }
 
 class CalendarRecordDay {
